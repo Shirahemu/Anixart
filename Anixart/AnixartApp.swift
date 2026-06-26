@@ -1,17 +1,13 @@
-//
-//  AnixartApp.swift
-//  Anixart
-//
-//  Created by Shirahemu on 26.06.2026.
-//
-
 import SwiftUI
 
 @main
 struct AnixartApp: App {
+    @StateObject private var appState = AppState()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environmentObject(appState)
         }
     }
 }
