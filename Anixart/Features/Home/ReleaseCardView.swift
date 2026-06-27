@@ -10,14 +10,15 @@ struct ReleaseCardView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(release.displayTitle)
                     .font(.headline)
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
                     if let year = release.year {
                         Label(year, systemImage: "calendar")
                     }
-                    if let count = release.episodesReleased ?? release.episodesTotal {
-                        Label("\(count) ep.", systemImage: "play.rectangle")
+                    if !release.homeEpisodeRatingSubtitle.isEmpty {
+                        Label(release.homeEpisodeRatingSubtitle, systemImage: "play.rectangle")
                     }
                 }
                 .font(.caption)

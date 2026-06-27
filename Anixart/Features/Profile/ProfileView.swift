@@ -13,24 +13,17 @@ struct ProfileView: View {
         List {
             if let profile {
                 Section {
-                    profileHeader(profile)
-                }
-
-                Section("Счётчики") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], alignment: .leading, spacing: 10) {
-                        MetricPillView(title: "избранное", value: value(profile.favoriteCount), systemImage: "heart")
-                        MetricPillView(title: "друзья", value: value(profile.friendCount), systemImage: "person.2")
-                        MetricPillView(title: "комментарии", value: value(profile.commentCount), systemImage: "text.bubble")
-                        MetricPillView(title: "коллекции", value: value(profile.collectionCount), systemImage: "rectangle.stack")
-                        MetricPillView(title: "видео", value: value(profile.videoCount), systemImage: "video")
-                    }
+                    ProfileHeaderCard(profile: profile, isMyProfile: isMyProfile)
                 }
 
                 Section("Статистика") {
-                    watchStats(profile)
+                    ProfileStatsGrid(profile: profile)
                 }
 
-                releasePreviewSection("Оценки", releases: profile.votes)
+                if let votes = profile.votes, !votes.isEmpty {
+                    ProfileRatingsSection(releases: votes)
+                }
+
                 releasePreviewSection("История", releases: profile.history)
                 commentsPreviewSection(profile.commentsPreview)
                 collectionsPreviewSection(profile.collectionsPreview)
@@ -39,7 +32,7 @@ struct ProfileView: View {
                     Section("Друзья") {
                         ForEach(friends.prefix(5), id: \.stableProfileID) { friend in
                             HStack(spacing: 12) {
-                                avatar(friend.avatar)
+                                ProfileAvatarView(urlString: friend.avatar)
                                     .frame(width: 42, height: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(friend.login ?? "Профиль")
@@ -54,46 +47,28 @@ struct ProfileView: View {
                 }
 
                 Section("Динамика просмотров") {
-                    if let dynamics = profile.watchDynamics, !dynamics.isEmpty {
-                        ForEach(dynamics.prefix(7)) { item in
-                            InfoRowView(title: item.date?.value ?? "Дата", value: item.count.map(String.init))
-                        }
-                    } else {
-                        Text("Нет данных для графика.")
-                            .foregroundStyle(.secondary)
-                    }
+                    ProfileWatchDynamicsView(dynamics: profile.watchDynamics ?? [])
                 }
             }
 
             if profile == nil && !isLoading {
                 Section {
-                    ContentUnavailableView("Профиль не загружен", systemImage: "person.crop.circle", description: Text("Введите ID или войдите в аккаунт, чтобы загрузить профиль."))
+                    ContentUnavailableView(
+                        "Профиль не загружен",
+                        systemImage: "person.crop.circle",
+                        description: Text(output.isEmpty ? "Войдите в аккаунт, чтобы открыть профиль." : output)
+                    )
                 }
             }
 
-            Section("Поиск профиля") {
-                TextField("ID профиля", text: $profileID)
-                    .keyboardType(.numberPad)
-
-                DebugRunButton(title: "Загрузить профиль", systemImage: "person.crop.circle", isRunning: isLoading) {
-                    Task { await loadProfile() }
-                }
-            }
-
-            Section("Сессия") {
-                DebugStatusView(title: "Token", value: appState.hasToken ? "Сохранён" : "Нет")
-                DebugStatusView(title: "Login", value: appState.session?.login ?? "-")
-                DebugStatusView(title: "Profile ID", value: appState.session?.profileId.map(String.init) ?? "-")
-
+            Section {
                 Button(role: .destructive) {
                     appState.signOut()
+                    profile = nil
+                    profileID = ""
                 } label: {
                     Label("Выйти", systemImage: "rectangle.portrait.and.arrow.right")
                 }
-            }
-
-            if !output.isEmpty {
-                DebugOutputView(title: "Статус", output: output)
             }
         }
         .navigationTitle("Профиль")
@@ -104,97 +79,6 @@ struct ProfileView: View {
                 profileID = String(id)
                 await loadProfile()
             }
-        }
-    }
-
-    @ViewBuilder
-    private func profileHeader(_ profile: Profile) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            avatar(profile.avatar)
-                .frame(width: 78, height: 78)
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Text(profile.login ?? "Профиль")
-                        .font(.title3.weight(.semibold))
-                    if profile.isVerified == true {
-                        Image(systemName: "checkmark.seal.fill")
-                            .foregroundStyle(.blue)
-                    }
-                    if profile.isSponsor == true {
-                        Image(systemName: "star.circle.fill")
-                            .foregroundStyle(.yellow)
-                    }
-                }
-
-                Text(profile.displayStatus)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    Text(profile.isOnline == true ? "онлайн" : "офлайн")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background((profile.isOnline == true ? Color.green : Color.secondary).opacity(0.16), in: Capsule())
-
-                    if let badgeName = profile.badge?.name ?? profile.badgeName, !badgeName.isEmpty {
-                        Text(badgeName)
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(Color.accentColor.opacity(0.16), in: Capsule())
-                    }
-
-                    if isMyProfile {
-                        Text("мой профиль")
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(Color.accentColor.opacity(0.16), in: Capsule())
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func avatar(_ value: String?) -> some View {
-        if let value, let url = URL(string: value) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure(_), .empty:
-                    avatarPlaceholder
-                @unknown default:
-                    avatarPlaceholder
-                }
-            }
-            .clipShape(Circle())
-        } else {
-            avatarPlaceholder
-        }
-    }
-
-    private var avatarPlaceholder: some View {
-        Circle()
-            .fill(Color.secondary.opacity(0.18))
-            .overlay {
-                Image(systemName: "person.crop.circle")
-                    .foregroundStyle(.secondary)
-            }
-    }
-
-    @ViewBuilder
-    private func watchStats(_ profile: Profile) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], alignment: .leading, spacing: 10) {
-            MetricPillView(title: "смотрю", value: value(profile.watchingCount), systemImage: "play.circle")
-            MetricPillView(title: "в планах", value: value(profile.planCount), systemImage: "calendar.badge.plus")
-            MetricPillView(title: "просмотрено", value: value(profile.completedCount), systemImage: "checkmark.circle")
-            MetricPillView(title: "отложено", value: value(profile.holdOnCount), systemImage: "pause.circle")
-            MetricPillView(title: "брошено", value: value(profile.droppedCount), systemImage: "xmark.circle")
-            MetricPillView(title: "эпизоды", value: value(profile.watchedEpisodeCount), systemImage: "film")
-            MetricPillView(title: "время", value: profile.watchedHoursText ?? "-", systemImage: "clock")
         }
     }
 
@@ -250,14 +134,6 @@ struct ProfileView: View {
         }
     }
 
-    private func value(_ value: Int?) -> String {
-        value.map(String.init) ?? "-"
-    }
-
-    private func value(_ value: Int64?) -> String {
-        value.map(String.init) ?? "-"
-    }
-
     private func loadProfile() async {
         guard let id = Int64(profileID) else {
             output = "ID профиля должен быть числом."
@@ -279,6 +155,14 @@ struct ProfileView: View {
             if let decodedProfile = response.profile {
                 profile = decodedProfile
                 output = ""
+                logRatingWarnings(decodedProfile.votes)
+                appState.diagnosticsLogger.log(level: .info, category: .profile, message: "Profile load succeeded", metadata: [
+                    "profileId": decodedProfile.id.map(String.init) ?? "\(id)",
+                    "login": decodedProfile.login ?? "-",
+                    "votes": "\(decodedProfile.votes?.count ?? 0)",
+                    "history": "\(decodedProfile.history?.count ?? 0)",
+                    "friendsPreview": "\(decodedProfile.friendsPreview?.count ?? 0)"
+                ])
                 appState.diagnosticsLogger.log(level: .info, category: .uiState, message: "Profile UI state updated", metadata: [
                     "profileId": decodedProfile.id.map(String.init) ?? "-",
                     "login": decodedProfile.login ?? "-",
@@ -301,6 +185,19 @@ struct ProfileView: View {
             appState.diagnosticsLogger.log(level: .error, category: .profile, message: "Profile load failed", metadata: [
                 "profileId": "\(id)",
                 "error": error.localizedDescription
+            ])
+        }
+    }
+
+    private func logRatingWarnings(_ releases: [Release]?) {
+        for release in (releases ?? []).prefix(3) {
+            guard release.userRating == nil || release.votedAt == nil else { continue }
+            appState.diagnosticsLogger.log(level: .warning, category: .profile, message: "Profile rating metadata incomplete", metadata: [
+                "releaseId": release.id.map(String.init) ?? "-",
+                "title": release.displayTitle,
+                "hasMyVote": release.myVote == nil ? "false" : "true",
+                "hasYourVote": release.yourVote == nil ? "false" : "true",
+                "hasVotedAt": release.votedAt == nil ? "false" : "true"
             ])
         }
     }

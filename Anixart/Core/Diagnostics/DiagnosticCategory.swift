@@ -8,6 +8,7 @@ enum DiagnosticCategory: String, Codable, CaseIterable, Identifiable {
     case decoding
     case profile
     case release
+    case player
     case home
     case imageLoading
     case navigation

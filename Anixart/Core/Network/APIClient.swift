@@ -211,7 +211,9 @@ final class APIClient: APIClientProtocol {
             "signAttached": diagnostics.signAttached ? "true" : "false",
             "headerProfile": diagnostics.headerProfile,
             "timeout": String(format: "%.1f", diagnostics.timeout),
-            "url": RedactionPolicy.redactedURL(diagnostics.url)
+            "url": RedactionPolicy.redactedURL(diagnostics.url),
+            "bodyKeys": endpoint.body.diagnosticKeys,
+            "bodyPreview": endpoint.body.diagnosticPreview
         ], requestId: requestId)
     }
 
@@ -224,6 +226,7 @@ final class APIClient: APIClientProtocol {
         data: Data,
         requestId: String
     ) async {
+        let isFullTraceEnabled = await diagnosticsLogger?.isFullTraceEnabled == true
         if let profileResponse = decoded as? ProfileResponse {
             await diagnosticsLogger?.updateProfileAudit(ProfileDecodeAudit.make(data: data, response: profileResponse))
         }
@@ -235,18 +238,19 @@ final class APIClient: APIClientProtocol {
             "topLevelKeys": JSONInspection.topLevelKeys(in: data).joined(separator: ","),
             "serverCode": JSONInspection.serverCode(in: data) ?? "-",
             "decodedType": "\(type)",
-            "redactedJSON": JSONInspection.redactedPrettyJSON(from: data)
+            "redactedJSON": isFullTraceEnabled ? JSONInspection.redactedPrettyJSON(from: data) : "<enable Full Trace>"
         ], requestId: requestId)
     }
 
     private func logDecodingFailure<T>(endpoint: APIEndpoint, type: T.Type, error: Error, data: Data, requestId: String) async {
+        let isFullTraceEnabled = await diagnosticsLogger?.isFullTraceEnabled == true
         let description = DecodingDiagnostics.describe(error)
         var metadata = description.metadata
         metadata["endpoint"] = endpoint.name
         metadata["decodedType"] = "\(type)"
         metadata["rawTopLevelKeys"] = JSONInspection.topLevelKeys(in: data).joined(separator: ",")
         metadata["rawNestedProfileKeys"] = JSONInspection.nestedKeys("profile", in: data).joined(separator: ",")
-        metadata["redactedJSON"] = JSONInspection.redactedPrettyJSON(from: data)
+        metadata["redactedJSON"] = isFullTraceEnabled ? JSONInspection.redactedPrettyJSON(from: data) : "<enable Full Trace>"
         await diagnosticsLogger?.log(level: .error, category: .decoding, message: "Failed to decode \(type)", metadata: metadata, requestId: requestId)
     }
 
@@ -259,6 +263,7 @@ final class APIClient: APIClientProtocol {
         requestId: String,
         diagnostics: RequestDiagnostics?
     ) async {
+        let isFullTraceEnabled = await diagnosticsLogger?.isFullTraceEnabled == true
         await diagnosticsLogger?.log(level: .error, category: .network, message: "Request failed", metadata: [
             "endpoint": endpoint.name,
             "path": endpoint.resolvedPath,
@@ -267,7 +272,7 @@ final class APIClient: APIClientProtocol {
             "error": error.localizedDescription,
             "url": diagnostics.map { RedactionPolicy.redactedURL($0.url) } ?? "-",
             "rawTopLevelKeys": JSONInspection.topLevelKeys(in: data).joined(separator: ","),
-            "redactedJSON": JSONInspection.redactedPrettyJSON(from: data)
+            "redactedJSON": isFullTraceEnabled ? JSONInspection.redactedPrettyJSON(from: data) : "<enable Full Trace>"
         ], requestId: requestId)
     }
 }

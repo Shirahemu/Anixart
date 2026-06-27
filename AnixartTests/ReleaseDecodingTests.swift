@@ -20,6 +20,19 @@ final class ReleaseDecodingTests: XCTestCase {
         XCTAssertEqual(release.comments?.first?.profile?.login, "Rydeys san")
     }
 
+    func testEpisodeLastUpdateDecodesAndDrivesActivity() throws {
+        let response = try SnakeCaseDecodingTests.decoder.decode(ReleaseResponse.self, from: Data(Self.sampleWithEpisodeLastUpdate.utf8))
+        let release = try XCTUnwrap(response.release)
+
+        XCTAssertEqual(release.episodeLastUpdate?.episode, 13)
+        XCTAssertEqual(release.episodeLastUpdate?.sourceName, "AniStar")
+        XCTAssertEqual(release.episodeLastUpdate?.lastEpisodeTypeUpdateId, 365)
+        XCTAssertEqual(release.activityTimestamp, 1_782_227_813)
+        XCTAssertEqual(release.activityEpisodeLabel, "13 серия")
+        XCTAssertEqual(release.activitySourceLabel, "AniStar")
+        XCTAssertEqual(release.activitySubtitle, "13 серия • AniStar • обновлено недавно")
+    }
+
     private static let sampleDetailed = """
     {
       "code": 0,
@@ -115,6 +128,25 @@ final class ReleaseDecodingTests: XCTestCase {
         "watching_count": 2539,
         "year": "2026",
         "your_vote": 0
+      }
+    }
+    """
+
+    private static let sampleWithEpisodeLastUpdate = """
+    {
+      "code": 0,
+      "release": {
+        "id": 20205,
+        "title_ru": "Тестовый релиз",
+        "year": "2024",
+        "last_update_date": 100,
+        "episode_last_update": {
+          "episode": 13,
+          "source_name": "AniStar",
+          "type_name": "Озвучка",
+          "timestamp": 1782227813,
+          "last_episode_type_update_id": 365
+        }
       }
     }
     """

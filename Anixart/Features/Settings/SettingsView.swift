@@ -52,6 +52,10 @@ struct SettingsView: View {
                 } label: {
                     Label("Developer Tools", systemImage: "wrench.and.screwdriver")
                 }
+
+                Toggle("Full Trace", isOn: $appState.config.isFullTraceEnabled)
+                Toggle("Prefer WebView for iframe video", isOn: $appState.config.isPreferWebViewForIframe)
+                Toggle("Try direct parse before WebView", isOn: $appState.config.isDirectParseBeforeWebViewEnabled)
             }
         }
         .navigationTitle("Настройки")

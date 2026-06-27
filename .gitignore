@@ -10,6 +10,7 @@ DerivedData/
 build/
 *.ipa
 *.dSYM
+*.xcresult
 
 # Swift Package Manager
 .build/
@@ -19,3 +20,10 @@ Package.resolved
 # App secrets and local configuration
 *.env
 *.local
+
+# Local diagnostics and runtime exports
+*.log
+*.jsonl
+*.trace
+anixart-diagnostics-*/
+diagnostics-*/

@@ -7,17 +7,69 @@ final class ListsService {
         self.apiClient = apiClient
     }
 
-    func releases(status: ProfileListStatus, page: Int = 0) async throws -> PageableResponse<Release> {
-        try await apiClient.send(.profileListAll(status: status.rawValue, page: page), as: PageableResponse<Release>.self)
+    func releases(tab: ProfileListTab, page: Int = 0) async throws -> PageableResponse<Release> {
+        try await apiClient.send(tab.endpoint(page: page), as: PageableResponse<Release>.self)
+    }
+}
+
+enum ProfileListTab: Hashable, CaseIterable, Identifiable {
+    case favorites
+    case watching
+    case planned
+    case completed
+    case holdOn
+    case dropped
+
+    var id: String { title }
+
+    var title: String {
+        switch self {
+        case .favorites:
+            "Избранное"
+        case .watching:
+            "Смотрю"
+        case .planned:
+            "В планах"
+        case .completed:
+            "Просмотрено"
+        case .holdOn:
+            "Отложено"
+        case .dropped:
+            "Брошено"
+        }
+    }
+
+    var status: ProfileListStatus? {
+        switch self {
+        case .favorites:
+            nil
+        case .watching:
+            .watching
+        case .planned:
+            .planned
+        case .completed:
+            .completed
+        case .holdOn:
+            .holdOn
+        case .dropped:
+            .dropped
+        }
+    }
+
+    func endpoint(page: Int) -> APIEndpoint {
+        if self == .favorites {
+            return .favoriteAll(page: page)
+        }
+        return .profileListAll(status: status?.rawValue ?? 0, page: page)
     }
 }
 
 enum ProfileListStatus: Int, CaseIterable, Hashable, Identifiable {
     case watching = 1
-    case completed = 2
-    case dropped = 3
+    case planned = 2
+    case completed = 3
     case holdOn = 4
-    case planned = 5
+    case dropped = 5
 
     var id: Int { rawValue }
 
@@ -25,14 +77,14 @@ enum ProfileListStatus: Int, CaseIterable, Hashable, Identifiable {
         switch self {
         case .watching:
             "Смотрю"
-        case .completed:
-            "Просмотрено"
-        case .dropped:
-            "Брошено"
-        case .holdOn:
-            "Отложено"
         case .planned:
             "В планах"
+        case .completed:
+            "Просмотрено"
+        case .holdOn:
+            "Отложено"
+        case .dropped:
+            "Брошено"
         }
     }
 }

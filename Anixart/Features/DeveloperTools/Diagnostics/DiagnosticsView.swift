@@ -1,11 +1,17 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct DiagnosticsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedCategory: DiagnosticCategory?
     @State private var selectedLevel: DiagnosticLevel?
     @State private var searchText = ""
-    @State private var exportText = ""
+    @State private var txtExportURL: URL?
+    @State private var jsonlExportURL: URL?
+    @State private var fullTraceBundleURL: URL?
+    @State private var exportStatus = ""
 
     private var filteredEvents: [DiagnosticEvent] {
         appState.diagnosticsStore.events.filter { event in
@@ -22,18 +28,72 @@ struct DiagnosticsView: View {
         List {
             Section("Controls") {
                 Toggle("Enable verbose diagnostics", isOn: $appState.config.isDiagnosticsVerbose)
+                Toggle("Full Trace", isOn: $appState.config.isFullTraceEnabled)
+
+                if let txtExportURL {
+                    ShareLink(item: txtExportURL) {
+                        Label("Share TXT logs", systemImage: "square.and.arrow.up")
+                    }
+                } else {
+                    Button {
+                        prepareTextExport()
+                    } label: {
+                        Label("Share TXT logs", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                if let jsonlExportURL {
+                    ShareLink(item: jsonlExportURL) {
+                        Label("Share JSONL logs", systemImage: "square.and.arrow.up")
+                    }
+                } else {
+                    Button {
+                        prepareJSONLExport()
+                    } label: {
+                        Label("Share JSONL logs", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                Button {
+                    copySummary()
+                } label: {
+                    Label("Copy summary", systemImage: "doc.on.doc")
+                }
+
+                if let fullTraceBundleURL {
+                    ShareLink(item: fullTraceBundleURL) {
+                        Label("Export Full Trace Bundle", systemImage: "shippingbox")
+                    }
+                } else {
+                    Button {
+                        prepareFullTraceBundle()
+                    } label: {
+                        Label("Export Full Trace Bundle", systemImage: "shippingbox")
+                    }
+                }
 
                 Button(role: .destructive) {
                     appState.diagnosticsStore.clear()
-                    exportText = ""
+                    txtExportURL = nil
+                    jsonlExportURL = nil
+                    fullTraceBundleURL = nil
+                    exportStatus = "Logs cleared."
                 } label: {
                     Label("Clear logs", systemImage: "trash")
                 }
 
-                Button {
-                    exportText = appState.diagnosticsStore.exportReport(config: appState.config, session: appState.session)
+                Button(role: .destructive) {
+                    appState.diagnosticsStore.clear()
+                    fullTraceBundleURL = nil
+                    exportStatus = "Trace cleared."
                 } label: {
-                    Label("Export diagnostics text", systemImage: "square.and.arrow.up")
+                    Label("Clear Trace", systemImage: "trash.slash")
+                }
+
+                if !exportStatus.isEmpty {
+                    Text(exportStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -99,15 +159,51 @@ struct DiagnosticsView: View {
                 }
             }
 
-            if !exportText.isEmpty {
-                Section("Export") {
-                    Text(exportText)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
         }
         .navigationTitle("Diagnostics")
+        .task {
+            prepareTextExport()
+            prepareJSONLExport()
+            prepareFullTraceBundle()
+        }
+    }
+
+    private func prepareTextExport() {
+        do {
+            let report = appState.diagnosticsStore.exportTextReport(config: appState.config, session: appState.session)
+            txtExportURL = try DiagnosticsExportService.makeTextFile(report: report)
+            exportStatus = "TXT log file is ready to share."
+        } catch {
+            exportStatus = "TXT export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func prepareJSONLExport() {
+        do {
+            let report = appState.diagnosticsStore.exportJSONL(config: appState.config, session: appState.session)
+            jsonlExportURL = try DiagnosticsExportService.makeJSONLFile(report: report)
+            exportStatus = "JSONL log file is ready to share."
+        } catch {
+            exportStatus = "JSONL export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func prepareFullTraceBundle() {
+        do {
+            fullTraceBundleURL = try DiagnosticsExportService.makeFullTraceBundle(store: appState.diagnosticsStore, config: appState.config, session: appState.session)
+            exportStatus = "Full Trace bundle is ready to share."
+        } catch {
+            exportStatus = "Full Trace export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func copySummary() {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = appState.diagnosticsStore.exportSummary(config: appState.config, session: appState.session)
+        exportStatus = "Summary copied."
+        #else
+        exportStatus = "Copy summary is available on iOS."
+        #endif
     }
 
     private var categoryBinding: Binding<String> {

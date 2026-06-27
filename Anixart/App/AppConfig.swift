@@ -14,6 +14,10 @@ struct AppConfig: Codable, Equatable {
     var isMockMode: Bool = true
     var isSignEnabled: Bool = false
     var isDiagnosticsVerbose: Bool = false
+    var isFullTraceEnabled: Bool = false
+    var isPreferWebViewForIframe: Bool = true
+    var isDirectParseBeforeWebViewEnabled: Bool = false
+    var webPlayerUserAgentProfile: WebPlayerUserAgentProfile = .androidWebView
     var requestTimeout: TimeInterval = 25
 
     enum CodingKeys: String, CodingKey {
@@ -23,6 +27,10 @@ struct AppConfig: Codable, Equatable {
         case isMockMode
         case isSignEnabled
         case isDiagnosticsVerbose
+        case isFullTraceEnabled
+        case isPreferWebViewForIframe
+        case isDirectParseBeforeWebViewEnabled
+        case webPlayerUserAgentProfile
         case requestTimeout
     }
 
@@ -33,6 +41,10 @@ struct AppConfig: Codable, Equatable {
         isMockMode: Bool = true,
         isSignEnabled: Bool = false,
         isDiagnosticsVerbose: Bool = false,
+        isFullTraceEnabled: Bool = false,
+        isPreferWebViewForIframe: Bool = true,
+        isDirectParseBeforeWebViewEnabled: Bool = false,
+        webPlayerUserAgentProfile: WebPlayerUserAgentProfile = .androidWebView,
         requestTimeout: TimeInterval = 25
     ) {
         self.environment = environment
@@ -42,6 +54,10 @@ struct AppConfig: Codable, Equatable {
         self.isMockMode = isMockMode
         self.isSignEnabled = isSignEnabled
         self.isDiagnosticsVerbose = isDiagnosticsVerbose
+        self.isFullTraceEnabled = isFullTraceEnabled
+        self.isPreferWebViewForIframe = isPreferWebViewForIframe
+        self.isDirectParseBeforeWebViewEnabled = isDirectParseBeforeWebViewEnabled
+        self.webPlayerUserAgentProfile = webPlayerUserAgentProfile
         self.requestTimeout = requestTimeout
     }
 
@@ -53,6 +69,10 @@ struct AppConfig: Codable, Equatable {
         isMockMode = try container.decodeIfPresent(Bool.self, forKey: .isMockMode) ?? true
         isSignEnabled = try container.decodeIfPresent(Bool.self, forKey: .isSignEnabled) ?? false
         isDiagnosticsVerbose = try container.decodeIfPresent(Bool.self, forKey: .isDiagnosticsVerbose) ?? false
+        isFullTraceEnabled = try container.decodeIfPresent(Bool.self, forKey: .isFullTraceEnabled) ?? false
+        isPreferWebViewForIframe = try container.decodeIfPresent(Bool.self, forKey: .isPreferWebViewForIframe) ?? true
+        isDirectParseBeforeWebViewEnabled = try container.decodeIfPresent(Bool.self, forKey: .isDirectParseBeforeWebViewEnabled) ?? false
+        webPlayerUserAgentProfile = try container.decodeIfPresent(WebPlayerUserAgentProfile.self, forKey: .webPlayerUserAgentProfile) ?? .androidWebView
         requestTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .requestTimeout) ?? 25
 
         switch environmentKind {
@@ -73,6 +93,10 @@ struct AppConfig: Codable, Equatable {
         try container.encode(isMockMode, forKey: .isMockMode)
         try container.encode(isSignEnabled, forKey: .isSignEnabled)
         try container.encode(isDiagnosticsVerbose, forKey: .isDiagnosticsVerbose)
+        try container.encode(isFullTraceEnabled, forKey: .isFullTraceEnabled)
+        try container.encode(isPreferWebViewForIframe, forKey: .isPreferWebViewForIframe)
+        try container.encode(isDirectParseBeforeWebViewEnabled, forKey: .isDirectParseBeforeWebViewEnabled)
+        try container.encode(webPlayerUserAgentProfile, forKey: .webPlayerUserAgentProfile)
         try container.encode(requestTimeout, forKey: .requestTimeout)
     }
 

@@ -11,13 +11,6 @@ struct MainTabView: View {
             }
 
             NavigationStack {
-                SearchView()
-            }
-            .tabItem {
-                Label("Поиск", systemImage: "magnifyingglass")
-            }
-
-            NavigationStack {
                 ListsView()
             }
             .tabItem {

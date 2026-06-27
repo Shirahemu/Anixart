@@ -10,6 +10,10 @@ final class DiagnosticsLogger {
         self.store = store
     }
 
+    var isFullTraceEnabled: Bool {
+        store.isFullTraceEnabled
+    }
+
     func log(
         level: DiagnosticLevel,
         category: DiagnosticCategory,

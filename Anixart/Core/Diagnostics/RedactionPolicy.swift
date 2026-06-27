@@ -29,6 +29,7 @@ enum RedactionPolicy {
         for key in keys {
             output = redactKey(key, in: output)
         }
+        output = redactSignedVideoQueryValues(in: output)
         return output
     }
 
@@ -64,6 +65,17 @@ enum RedactionPolicy {
         return items.map(\.name).sorted().joined(separator: ",")
     }
 
+    static func videoURLSummary(_ url: URL) -> [String: String] {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryKeys = components?.queryItems?.map(\.name).sorted().joined(separator: ",") ?? ""
+        return [
+            "scheme": url.scheme ?? "-",
+            "host": url.host ?? "-",
+            "path": url.path,
+            "queryKeys": queryKeys
+        ]
+    }
+
     private static func redactKey(_ key: String, in text: String) -> String {
         var output = text
         let escapedKey = NSRegularExpression.escapedPattern(for: key)
@@ -78,6 +90,16 @@ enum RedactionPolicy {
             let range = NSRange(output.startIndex..<output.endIndex, in: output)
             output = regex.stringByReplacingMatches(in: output, range: range, withTemplate: template)
         }
+        return output
+    }
+
+    private static func redactSignedVideoQueryValues(in text: String) -> String {
+        var output = text
+        guard let regex = try? NSRegularExpression(pattern: #"([?&](?:d|s|ip)=)[^&\s"\\]+"#, options: [.caseInsensitive]) else {
+            return output
+        }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        output = regex.stringByReplacingMatches(in: output, range: range, withTemplate: "$1<redacted>")
         return output
     }
 }

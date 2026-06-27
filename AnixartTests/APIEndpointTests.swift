@@ -24,4 +24,28 @@ final class APIEndpointTests: XCTestCase {
         XCTAssertEqual(endpoint.headers["API-Version"], "v2")
         XCTAssertTrue(endpoint.requiresToken)
     }
+
+    func testProfileListStatusMappingMatchesAndroid() {
+        XCTAssertEqual(ProfileListStatus.watching.rawValue, 1)
+        XCTAssertEqual(ProfileListStatus.planned.rawValue, 2)
+        XCTAssertEqual(ProfileListStatus.completed.rawValue, 3)
+        XCTAssertEqual(ProfileListStatus.holdOn.rawValue, 4)
+        XCTAssertEqual(ProfileListStatus.dropped.rawValue, 5)
+    }
+
+    func testListTabEndpoints() {
+        XCTAssertEqual(ProfileListTab.favorites.endpoint(page: 0).resolvedPath, "favorite/all/0")
+        XCTAssertEqual(ProfileListTab.watching.endpoint(page: 2).resolvedPath, "profile/list/all/1/2")
+        XCTAssertEqual(ProfileListTab.planned.endpoint(page: 0).resolvedPath, "profile/list/all/2/0")
+        XCTAssertEqual(ProfileListTab.completed.endpoint(page: 0).resolvedPath, "profile/list/all/3/0")
+        XCTAssertEqual(ProfileListTab.holdOn.endpoint(page: 0).resolvedPath, "profile/list/all/4/0")
+        XCTAssertEqual(ProfileListTab.dropped.endpoint(page: 0).resolvedPath, "profile/list/all/5/0")
+    }
+
+    func testHomeFilterMapping() {
+        XCTAssertEqual(HomeCategory.latest.filterBody.diagnosticDescription, "{}")
+        XCTAssertTrue(HomeCategory.ongoing.filterBody.diagnosticDescription.contains("status_id:2.0"))
+        XCTAssertTrue(HomeCategory.announced.filterBody.diagnosticDescription.contains("status_id:3.0"))
+        XCTAssertTrue(HomeCategory.completed.filterBody.diagnosticDescription.contains("status_id:1.0"))
+    }
 }

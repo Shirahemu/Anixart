@@ -36,6 +36,20 @@ struct DebugSettingsView: View {
                 Toggle("Send Sign", isOn: $appState.config.isSignEnabled)
             }
 
+            Section("Player") {
+                Toggle("Prefer WebView for iframe video", isOn: $appState.config.isPreferWebViewForIframe)
+                Toggle("Try direct parse before WebView", isOn: $appState.config.isDirectParseBeforeWebViewEnabled)
+                Picker("WebView User-Agent", selection: $appState.config.webPlayerUserAgentProfile) {
+                    ForEach(WebPlayerUserAgentProfile.allCases) { profile in
+                        Text(profile.title).tag(profile)
+                    }
+                }
+            }
+
+            Section("Diagnostics") {
+                Toggle("Full Trace", isOn: $appState.config.isFullTraceEnabled)
+            }
+
             Section("Token") {
                 DebugStatusView(title: "Storage", value: appState.config.isMockMode ? "Memory" : "Keychain")
                 DebugStatusView(title: "Status", value: appState.hasToken ? "Saved" : "Missing")

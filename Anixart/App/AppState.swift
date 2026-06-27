@@ -6,8 +6,19 @@ final class AppState: ObservableObject {
     @Published var config: AppConfig {
         didSet {
             settingsStore.saveConfig(config)
-            diagnosticsStore.isVerboseEnabled = config.isDiagnosticsVerbose
+            diagnosticsStore.isVerboseEnabled = config.isDiagnosticsVerbose || config.isFullTraceEnabled
+            diagnosticsStore.isFullTraceEnabled = config.isFullTraceEnabled
             refreshTokenStatus()
+            diagnosticsLogger.log(level: .info, category: .settings, message: "Config changed", metadata: [
+                "mode": config.isMockMode ? "mock" : "live",
+                "environment": config.resolvedEnvironment.title,
+                "headerProfile": config.headerProfile.title,
+                "signEnabled": config.isSignEnabled ? "true" : "false",
+                "diagnosticsVerbose": config.isDiagnosticsVerbose ? "true" : "false",
+                "fullTrace": config.isFullTraceEnabled ? "true" : "false",
+                "preferWebViewForIframe": config.isPreferWebViewForIframe ? "true" : "false",
+                "directParseBeforeWebView": config.isDirectParseBeforeWebViewEnabled ? "true" : "false"
+            ])
         }
     }
 
@@ -38,7 +49,8 @@ final class AppState: ObservableObject {
         self.diagnosticsLogger = DiagnosticsLogger(store: resolvedDiagnosticsStore)
         self.config = settingsStore.loadConfig()
         self.session = settingsStore.loadSession()
-        self.diagnosticsStore.isVerboseEnabled = self.config.isDiagnosticsVerbose
+        self.diagnosticsStore.isVerboseEnabled = self.config.isDiagnosticsVerbose || self.config.isFullTraceEnabled
+        self.diagnosticsStore.isFullTraceEnabled = self.config.isFullTraceEnabled
         refreshTokenStatus()
         diagnosticsLogger.log(level: .info, category: .appState, message: "AppState initialized", metadata: [
             "mode": config.isMockMode ? "mock" : "live",
@@ -46,6 +58,12 @@ final class AppState: ObservableObject {
             "headerProfile": config.headerProfile.title,
             "hasSession": session == nil ? "false" : "true"
         ])
+        if let session {
+            diagnosticsLogger.log(level: .info, category: .session, message: "Session restored", metadata: [
+                "profileId": session.profileId.map(String.init) ?? "-",
+                "login": session.login ?? "-"
+            ])
+        }
     }
 
     var activeTokenStorage: TokenStorage {

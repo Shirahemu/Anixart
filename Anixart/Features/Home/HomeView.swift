@@ -2,7 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedCategory: HomeCategory = .my
+    @State private var selectedCategory: HomeCategory = .latest
     @State private var releases: [Release] = []
     @State private var output = ""
     @State private var isLoading = false
@@ -94,6 +94,10 @@ struct HomeView: View {
                 ForEach(HomeCategory.allCases) { category in
                     Button {
                         selectedCategory = category
+                        appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home tab selected", metadata: [
+                            "category": category.title,
+                            "statusId": category.statusId.map(String.init) ?? "-"
+                        ])
                         Task { await loadSelectedCategory() }
                     } label: {
                         Text(category.title)
@@ -115,26 +119,36 @@ struct HomeView: View {
 
         do {
             let service = HomeFeedService(apiClient: appState.makeAPIClient())
-            releases = try await service.releases(for: selectedCategory)
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home feed request started", metadata: [
+                "category": selectedCategory.title,
+                "endpoint": "filter/0",
+                "filterBody": selectedCategory.filterBody.diagnosticDescription,
+                "statusId": selectedCategory.statusId.map(String.init) ?? "-",
+                "categoryId": "-"
+            ])
+            let result = try await service.feed(for: selectedCategory)
+            releases = result.releases
             output = releases.isEmpty ? "Ответ получен, но релизы не декодированы." : ""
-        } catch {
-            if selectedCategory != .my {
-                await loadScheduleFallback(after: error)
-            } else {
-                releases = []
-                output = DebugResultFormatter.error(error)
-            }
-        }
-    }
-
-    private func loadScheduleFallback(after error: Error) async {
-        do {
-            let service = HomeFeedService(apiClient: appState.makeAPIClient())
-            releases = try await service.releases(for: .my)
-            output = "Фильтр недоступен: \(DebugResultFormatter.error(error)). Показано расписание."
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home feed request succeeded", metadata: [
+                "category": selectedCategory.title,
+                "endpoint": "filter/0",
+                "rawCount": "\(result.rawCount)",
+                "resultCount": "\(result.releases.count)",
+                "droppedCount": "\(result.droppedCount)",
+                "episodeLastUpdateCount": "\(result.hasEpisodeLastUpdateCount)",
+                "firstItemsRaw": result.firstItemsBefore.joined(separator: " | "),
+                "firstItems": result.firstItemsAfter.joined(separator: " | "),
+                "statusId": selectedCategory.statusId.map(String.init) ?? "-",
+                "categoryId": "-"
+            ])
         } catch {
             releases = []
             output = DebugResultFormatter.error(error)
+            appState.diagnosticsLogger.log(level: .error, category: .home, message: "Home feed request failed", metadata: [
+                "category": selectedCategory.title,
+                "endpoint": "filter/0",
+                "error": output
+            ])
         }
     }
 }

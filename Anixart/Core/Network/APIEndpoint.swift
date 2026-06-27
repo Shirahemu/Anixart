@@ -232,4 +232,60 @@ enum JSONValue: Codable, Equatable {
             self = .object(try container.decode([String: JSONValue].self))
         }
     }
+
+    var diagnosticDescription: String {
+        switch self {
+        case .string(let value):
+            "\"\(RedactionPolicy.redact(value))\""
+        case .number(let value):
+            String(value)
+        case .bool(let value):
+            value ? "true" : "false"
+        case .null:
+            "null"
+        case .array(let values):
+            "[" + values.map(\.diagnosticDescription).joined(separator: ",") + "]"
+        case .object(let values):
+            "{" + values.keys.sorted().map { key in
+                "\(key):\(values[key]?.diagnosticDescription ?? "null")"
+            }.joined(separator: ",") + "}"
+        }
+    }
+}
+
+extension APIEndpoint.Body {
+    var diagnosticKeys: String {
+        switch self {
+        case .none:
+            ""
+        case .form(let fields):
+            fields.keys.sorted().joined(separator: ",")
+        case .json(let value):
+            value.objectKeys.joined(separator: ",")
+        case .multipartPlaceholder:
+            "multipart"
+        }
+    }
+
+    var diagnosticPreview: String {
+        switch self {
+        case .none:
+            ""
+        case .form(let fields):
+            RedactionPolicy.redact(metadata: fields).map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "&")
+        case .json(let value):
+            value.diagnosticDescription
+        case .multipartPlaceholder:
+            "multipart"
+        }
+    }
+}
+
+private extension JSONValue {
+    var objectKeys: [String] {
+        if case .object(let values) = self {
+            return values.keys.sorted()
+        }
+        return []
+    }
 }

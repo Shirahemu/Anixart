@@ -22,6 +22,7 @@ struct Release: Codable, Equatable, Identifiable {
     let duration: Int?
     let episodesReleased: Int?
     let episodesTotal: Int?
+    let episodeLastUpdate: EpisodeLastUpdate?
     let favoriteCount: Int?
     let favoritesCount: Int?
     let genres: String?
@@ -69,6 +70,7 @@ struct Release: Codable, Equatable, Identifiable {
     let vote4Count: Int?
     let vote5Count: Int?
     let voteCount: Int?
+    let votedAt: Int64?
     let watchingCount: Int?
     let year: String?
     let yourVote: Int?
@@ -99,17 +101,116 @@ struct Release: Codable, Equatable, Identifiable {
         return nil
     }
 
+    var homeEpisodeRatingSubtitle: String {
+        var parts: [String] = []
+        if let released = episodesReleased, let total = episodesTotal {
+            parts.append("\(released) из \(total) эпизодов")
+        } else if let released = episodesReleased {
+            parts.append("\(released) эпизодов")
+        } else if let total = episodesTotal {
+            parts.append("\(total) эпизодов")
+        }
+        if let grade, grade > 0 {
+            parts.append(String(format: "%.1f ★", grade))
+        }
+        return parts.joined(separator: " • ")
+    }
+
     var subtitle: String {
         [year, episodeProgressText, status?.name, grade.map { String(format: "%.1f", $0) }]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
             .joined(separator: " • ")
     }
+
+    var activityTimestamp: Int64? {
+        [episodeLastUpdate?.timestamp, lastUpdateDate, lastViewTimestamp, airedOnDate, creationDate]
+            .compactMap { $0 }
+            .max()
+    }
+
+    var activityEpisodeLabel: String? {
+        if let episode = episodeLastUpdate?.episode, episode > 0 {
+            return "\(episode) серия"
+        }
+        if let released = episodesReleased, released > 0 {
+            return "\(released) серия"
+        }
+        return nil
+    }
+
+    var activitySourceLabel: String? {
+        episodeLastUpdate?.sourceName ?? episodeLastUpdate?.typeName ?? lastViewEpisodeTypeName
+    }
+
+    var isRecentlyActive: Bool {
+        guard let timestamp = activityTimestamp else { return false }
+        let seconds = timestamp > 10_000_000_000 ? TimeInterval(timestamp / 1000) : TimeInterval(timestamp)
+        let age = Date().timeIntervalSince1970 - seconds
+        return age < 120 * 24 * 60 * 60
+    }
+
+    var activitySubtitle: String {
+        var parts = [activityEpisodeLabel, activitySourceLabel].compactMap { $0 }.filter { !$0.isEmpty }
+        if episodeLastUpdate?.timestamp != nil {
+            parts.append("обновлено недавно")
+        }
+        return parts.isEmpty ? subtitle : parts.joined(separator: " • ")
+    }
 }
 
 struct ReleaseStatus: Codable, Equatable, Identifiable {
     let id: Int64?
     let name: String?
+}
+
+struct EpisodeLastUpdate: Codable, Equatable {
+    let episode: Int?
+    let sourceName: String?
+    let typeName: String?
+    let timestamp: Int64?
+    let lastEpisodeTypeUpdateId: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case episode
+        case sourceName
+        case typeName
+        case timestamp
+        case lastEpisodeTypeUpdateId
+    }
+
+    init(
+        episode: Int? = nil,
+        sourceName: String? = nil,
+        typeName: String? = nil,
+        timestamp: Int64? = nil,
+        lastEpisodeTypeUpdateId: Int64? = nil
+    ) {
+        self.episode = episode
+        self.sourceName = sourceName
+        self.typeName = typeName
+        self.timestamp = timestamp
+        self.lastEpisodeTypeUpdateId = lastEpisodeTypeUpdateId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let dynamic = try decoder.container(keyedBy: AnyCodingKey.self)
+        episode = container.decodeLossyInt(forKey: .episode)
+            ?? dynamic.decodeFlexibleInt64(for: "last_episode").map(Int.init)
+            ?? dynamic.decodeFlexibleInt64(for: "episode_number").map(Int.init)
+        sourceName = container.decodeLossyString(forKey: .sourceName)
+            ?? dynamic.decodeLossyString(for: "source_name")
+        typeName = container.decodeLossyString(forKey: .typeName)
+            ?? dynamic.decodeLossyString(for: "type_name")
+        timestamp = container.decodeLossyInt64(forKey: .timestamp)
+            ?? dynamic.decodeFlexibleInt64(for: "update_date")
+            ?? dynamic.decodeFlexibleInt64(for: "updated_at")
+            ?? dynamic.decodeFlexibleInt64(for: "timestamp")
+        lastEpisodeTypeUpdateId = container.decodeLossyInt64(forKey: .lastEpisodeTypeUpdateId)
+            ?? dynamic.decodeFlexibleInt64(for: "last_episode_type_update_id")
+            ?? dynamic.decodeFlexibleInt64(for: "type_id")
+    }
 }
 
 struct ReleaseComment: Codable, Equatable, Identifiable {

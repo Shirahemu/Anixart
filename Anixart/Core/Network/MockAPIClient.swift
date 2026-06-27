@@ -136,15 +136,15 @@ final class MockAPIClient: APIClientProtocol {
             """
         case "episode.list":
             json = """
-            { "episodes": [{ "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/video", "releaseId": 1001, "sourceId": 1 }] }
+            { "episodes": [{ "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/player/episode-1", "releaseId": 1001, "sourceId": 1, "iframe": true }] }
             """
         case "episode.target":
             json = """
-            { "episode": { "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/video" } }
+            { "episode": { "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/player/episode-1", "iframe": true } }
             """
         case "direct.links":
             json = """
-            { "default": "https://example.test/default.mp4", "q720p": "https://example.test/720.mp4" }
+            { "links": { "1080": "https://example.test/video-1080.m3u8", "720": "https://example.test/video-720.mp4" }, "default": "https://example.test/default.mp4" }
             """
         case "search.releases":
             json = """
