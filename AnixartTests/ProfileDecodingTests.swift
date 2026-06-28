@@ -7,7 +7,7 @@ final class ProfileDecodingTests: XCTestCase {
         let profile = try XCTUnwrap(response.profile)
 
         XCTAssertEqual(response.isMyProfile, true)
-        XCTAssertEqual(profile.login, "Shirahemu")
+        XCTAssertEqual(profile.login, "MockUser")
         XCTAssertEqual(profile.completedCount, 203)
         XCTAssertEqual(profile.planCount, 240)
         XCTAssertEqual(profile.watchingCount, 103)
@@ -18,9 +18,18 @@ final class ProfileDecodingTests: XCTestCase {
         XCTAssertEqual(profile.watchedEpisodeCount, 2191)
         XCTAssertEqual(profile.watchedTime, 52992)
         XCTAssertEqual(profile.watchedHoursText, "~883 часа")
-        XCTAssertEqual(profile.friendsPreview?.first?.login, "_SapKo_")
+        XCTAssertEqual(profile.friendsPreview?.first?.login, "MockFriend")
         XCTAssertEqual(profile.history?.first?.titleRu, "Мастера на все руки выгнали из отряда героев")
+        XCTAssertEqual(profile.history?.first?.historyEpisodeText, "1 серия")
+        XCTAssertEqual(profile.history?.first?.historySourceText, "AniMock")
+        XCTAssertTrue(profile.history?.first?.historyWatchedAtText?.hasPrefix("01.01.2024") == true)
         XCTAssertEqual(profile.votes?.first?.titleRu, "Принцесса Мононоке")
+    }
+
+    func testHistoryResponseCodeOnlyDecodes() throws {
+        let data = Data(#"{ "code": 0 }"#.utf8)
+        let response = try SnakeCaseDecodingTests.decoder.decode(HistoryResponse.self, from: data)
+        XCTAssertEqual(response.code, 0)
     }
 
     func testProfileToleratesBadNestedPreviewItems() throws {
@@ -30,7 +39,7 @@ final class ProfileDecodingTests: XCTestCase {
           "is_my_profile": true,
           "profile": {
             "id": 1602757,
-            "login": "Shirahemu",
+            "login": "MockUser",
             "completed_count": "203",
             "friends_preview": [
               { "id": 1, "login": "ok" },
@@ -44,7 +53,7 @@ final class ProfileDecodingTests: XCTestCase {
         }
         """
         let response = try SnakeCaseDecodingTests.decoder.decode(ProfileResponse.self, from: Data(json.utf8))
-        XCTAssertEqual(response.profile?.login, "Shirahemu")
+        XCTAssertEqual(response.profile?.login, "MockUser")
         XCTAssertEqual(response.profile?.completedCount, 203)
         XCTAssertEqual(response.profile?.friendsPreview?.count, 1)
     }
@@ -75,7 +84,7 @@ final class ProfileDecodingTests: XCTestCase {
             "is_social": true,
             "is_sponsor": false,
             "is_verified": false,
-            "login": "_SapKo_"
+            "login": "MockFriend"
           }
         ],
         "history": [
@@ -99,6 +108,8 @@ final class ProfileDecodingTests: XCTestCase {
               "position": 1,
               "quality": 0
             },
+            "last_view_episode_type_name": "AniMock",
+            "last_view_timestamp": 1704067200,
             "title_ru": "Мастера на все руки выгнали из отряда героев",
             "year": "2026"
           }
@@ -113,7 +124,7 @@ final class ProfileDecodingTests: XCTestCase {
         "is_stats_hidden": false,
         "is_verified": false,
         "last_activity_time": 1782505625,
-        "login": "Shirahemu",
+        "login": "MockUser",
         "plan_count": 240,
         "rating_score": 0,
         "register_date": 1635965847,

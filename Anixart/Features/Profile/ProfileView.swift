@@ -24,7 +24,7 @@ struct ProfileView: View {
                     ProfileRatingsSection(releases: votes)
                 }
 
-                releasePreviewSection("История", releases: profile.history)
+                historyPreviewSection(profile.history)
                 commentsPreviewSection(profile.commentsPreview)
                 collectionsPreviewSection(profile.collectionsPreview)
 
@@ -83,16 +83,34 @@ struct ProfileView: View {
     }
 
     @ViewBuilder
-    private func releasePreviewSection(_ title: String, releases: [Release]?) -> some View {
+    private func historyPreviewSection(_ releases: [Release]?) -> some View {
         if let releases, !releases.isEmpty {
-            Section(title) {
-                ForEach(releases.prefix(5), id: \.stableListID) { release in
+            Section("История просмотров") {
+                ForEach(releases.prefix(3), id: \.stableListID) { release in
                     NavigationLink {
                         ReleaseDetailsView(releaseId: release.id ?? 0, initialRelease: release)
                     } label: {
-                        ReleaseCardView(release: release)
+                        ProfileHistoryRowView(release: release, style: .compact)
+                            .foregroundStyle(.primary)
                     }
+                    .buttonStyle(.plain)
                     .disabled(release.id == nil)
+                }
+
+                if isMyProfile {
+                    NavigationLink {
+                        ProfileHistoryView(
+                            service: HistoryService(apiClient: appState.makeAPIClient()),
+                            diagnosticsLogger: appState.diagnosticsLogger
+                        )
+                    } label: {
+                        Label("Показать все", systemImage: "list.bullet")
+                    }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        appState.diagnosticsLogger.log(level: .info, category: .profile, message: "Profile history preview opened", metadata: [
+                            "previewCount": "\(min(releases.count, 3))"
+                        ])
+                    })
                 }
             }
         }
@@ -207,13 +225,6 @@ private extension Profile {
     var stableProfileID: String {
         if let id { return "profile-\(id)" }
         return "profile-\(login ?? UUID().uuidString)"
-    }
-}
-
-private extension ReleaseComment {
-    var stableCommentID: String {
-        if let id { return "comment-\(id)" }
-        return "comment-\(timestamp ?? 0)-\(message ?? "")"
     }
 }
 

@@ -152,10 +152,3 @@ struct HomeView: View {
         }
     }
 }
-
-extension Release {
-    var stableListID: String {
-        if let id { return "release-\(id)" }
-        return "\(displayTitle)-\(year ?? "")-\(image ?? poster ?? "")"
-    }
-}

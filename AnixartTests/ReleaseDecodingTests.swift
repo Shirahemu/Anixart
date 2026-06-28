@@ -17,7 +17,7 @@ final class ReleaseDecodingTests: XCTestCase {
         XCTAssertEqual(release.studio, "Voil")
         XCTAssertEqual(release.source, "ранобэ")
         XCTAssertEqual(release.comments?.first?.message, "Можно смотреть?")
-        XCTAssertEqual(release.comments?.first?.profile?.login, "Rydeys san")
+        XCTAssertEqual(release.comments?.first?.profile?.login, "MockCommenter")
     }
 
     func testEpisodeLastUpdateDecodesAndDrivesActivity() throws {
@@ -31,6 +31,79 @@ final class ReleaseDecodingTests: XCTestCase {
         XCTAssertEqual(release.activityEpisodeLabel, "13 серия")
         XCTAssertEqual(release.activitySourceLabel, "AniStar")
         XCTAssertEqual(release.activitySubtitle, "13 серия • AniStar • обновлено недавно")
+    }
+
+    func testReleaseCommentResponseWrappersTolerateCodeOnly() throws {
+        let data = Data(#"{ "code": 0 }"#.utf8)
+        let add = try SnakeCaseDecodingTests.decoder.decode(ReleaseCommentAddResponse.self, from: data)
+        let edit = try SnakeCaseDecodingTests.decoder.decode(ReleaseCommentEditResponse.self, from: data)
+        let delete = try SnakeCaseDecodingTests.decoder.decode(ReleaseCommentDeleteResponse.self, from: data)
+
+        XCTAssertEqual(add.code, 0)
+        XCTAssertNil(add.comment)
+        XCTAssertEqual(edit.code, 0)
+        XCTAssertNil(edit.comment)
+        XCTAssertEqual(delete.code, 0)
+    }
+
+    func testReleaseCommentDecodesNestedReleaseWhenPresent() throws {
+        let json = """
+        {
+          "id": 14867251,
+          "message": "Есть nested release",
+          "timestamp": 1782235432,
+          "vote": 2,
+          "vote_count": 7,
+          "reply_count": 1,
+          "is_spoiler": false,
+          "release": { "id": 20205, "title_ru": "Тестовый релиз" }
+        }
+        """
+        let comment = try SnakeCaseDecodingTests.decoder.decode(ReleaseComment.self, from: Data(json.utf8))
+
+        XCTAssertEqual(comment.id, 14867251)
+        XCTAssertEqual(comment.commentVote, .plus)
+        XCTAssertEqual(comment.release?.displayTitle, "Тестовый релиз")
+    }
+
+    func testReleaseRatingFieldsDecodeAndBuildDistribution() throws {
+        let response = try SnakeCaseDecodingTests.decoder.decode(ReleaseResponse.self, from: Data(Self.sampleWithRatings.utf8))
+        let release = try XCTUnwrap(response.release)
+
+        XCTAssertEqual(release.vote1Count, 3)
+        XCTAssertEqual(release.vote2Count, 4)
+        XCTAssertEqual(release.vote3Count, 8)
+        XCTAssertEqual(release.vote4Count, 20)
+        XCTAssertEqual(release.vote5Count, 65)
+        XCTAssertEqual(release.voteCount, 100)
+        XCTAssertEqual(release.myVote, 4)
+        XCTAssertEqual(release.yourVote, 5)
+        XCTAssertEqual(release.userRating, 4)
+        XCTAssertEqual(release.normalizedUserRating, 4)
+        XCTAssertEqual(release.votedAt, 1_782_600_000)
+        XCTAssertEqual(release.ratingTotalCount, 100)
+        XCTAssertEqual(release.ratingDistribution.map(\.vote), [1, 2, 3, 4, 5])
+        XCTAssertEqual(release.ratingDistribution.map(\.count), [3, 4, 8, 20, 65])
+        XCTAssertEqual(release.ratingDistribution.last?.fraction, 0.65)
+        XCTAssertEqual(release.ratingAverageText, "8.2")
+        XCTAssertTrue(release.hasReliableGrade)
+    }
+
+    func testReleaseRatingIgnoresInvalidUserVoteAndFallsBackToSummedTotal() throws {
+        let response = try SnakeCaseDecodingTests.decoder.decode(ReleaseResponse.self, from: Data(Self.sampleWithInvalidRating.utf8))
+        let release = try XCTUnwrap(response.release)
+
+        XCTAssertEqual(release.userRating, 7)
+        XCTAssertNil(release.normalizedUserRating)
+        XCTAssertEqual(release.ratingTotalCount, 10)
+        XCTAssertEqual(release.ratingAverageText, "—")
+        XCTAssertFalse(release.hasReliableGrade)
+    }
+
+    func testVoteReleaseResponseWrappersDecodeCodeOnly() throws {
+        let data = Data(#"{ "code": 0 }"#.utf8)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(VoteReleaseResponse.self, from: data).code, 0)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(DeleteVoteReleaseResponse.self, from: data).code, 0)
     }
 
     private static let sampleDetailed = """
@@ -63,7 +136,7 @@ final class ReleaseDecodingTests: XCTestCase {
               "id": 4103354,
               "is_sponsor": false,
               "is_verified": false,
-              "login": "Rydeys san"
+              "login": "MockCommenter"
             },
             "reply_count": 6,
             "timestamp": 1782235432,
@@ -147,6 +220,42 @@ final class ReleaseDecodingTests: XCTestCase {
           "timestamp": 1782227813,
           "last_episode_type_update_id": 365
         }
+      }
+    }
+    """
+
+    private static let sampleWithRatings = """
+    {
+      "release": {
+        "id": 1001,
+        "title_ru": "Рейтинг",
+        "grade": 8.2,
+        "vote_1_count": 3,
+        "vote_2_count": 4,
+        "vote_3_count": 8,
+        "vote_4_count": 20,
+        "vote_5_count": 65,
+        "vote_count": 100,
+        "my_vote": 4,
+        "your_vote": 5,
+        "voted_at": 1782600000
+      }
+    }
+    """
+
+    private static let sampleWithInvalidRating = """
+    {
+      "release": {
+        "id": 1002,
+        "title_ru": "Мало оценок",
+        "grade": 0,
+        "vote_1_count": 1,
+        "vote_2_count": 2,
+        "vote_3_count": 3,
+        "vote_4_count": 4,
+        "vote_5_count": 0,
+        "my_vote": 7,
+        "voted_at": 0
       }
     }
     """

@@ -73,7 +73,40 @@ final class MockAPIClient: APIClientProtocol {
                 "dropped_count": 0,
                 "watched_episode_count": 120,
                 "watched_time": 3600,
-                "history": [{ "id": 1001, "title_ru": "История Mock", "year": "2026" }],
+                "history": [
+                  {
+                    "id": 1001,
+                    "title_ru": "История Mock",
+                    "year": "2026",
+                    "image": "https://example.test/history-1.jpg",
+                    "grade": 8.2,
+                    "episodes_released": 6,
+                    "episodes_total": 12,
+                    "is_favorite": true,
+                    "last_view_episode_name": "6 серия",
+                    "last_view_episode_type_name": "Mock source",
+                    "last_view_timestamp": 1782600000
+                  },
+                  {
+                    "id": 1003,
+                    "title_ru": "История Mock 2",
+                    "year": "2025",
+                    "image": "https://example.test/history-2.jpg",
+                    "episodes_released": 3,
+                    "episodes_total": 10,
+                    "last_view_episode": { "name": "3 серия", "position": 3 },
+                    "last_view_episode_type_name": "AniMock",
+                    "last_view_timestamp": 1782513600
+                  },
+                  {
+                    "id": 1004,
+                    "title_ru": "История Mock 3",
+                    "year": "2024",
+                    "episodes_released": 1,
+                    "episodes_total": 12,
+                    "last_view_timestamp": 1782400000
+                  }
+                ],
                 "votes": [{ "id": 1002, "title_ru": "Оценка Mock", "year": "2025" }]
               }
             }
@@ -93,14 +126,171 @@ final class MockAPIClient: APIClientProtocol {
                 "image": "https://example.test/poster.jpg",
                 "year": "2026",
                 "grade": 8.2,
+                "vote_1_count": 3,
+                "vote_2_count": 5,
+                "vote_3_count": 14,
+                "vote_4_count": 42,
+                "vote_5_count": 86,
+                "vote_count": 150,
+                "my_vote": 4,
+                "your_vote": 4,
+                "voted_at": 1782600000,
                 "episodes_total": 12,
                 "episodes_released": 6,
                 "favorite_count": 10,
                 "comment_count": 2,
+                "comments": [
+                  {
+                    "id": 9001,
+                    "message": "Mock-комментарий для предпросмотра.",
+                    "timestamp": 1782600000,
+                    "vote": 2,
+                    "vote_count": 4,
+                    "reply_count": 1,
+                    "profile": { "id": 42, "login": "mock_user", "avatar": "https://example.test/avatar.png" }
+                  },
+                  {
+                    "id": 9002,
+                    "message": "Скрытый комментарий",
+                    "timestamp": 1782601200,
+                    "vote": 0,
+                    "vote_count": 0,
+                    "reply_count": 0,
+                    "is_spoiler": true,
+                    "profile": { "id": 43, "login": "spoiler_user" }
+                  }
+                ],
                 "status": { "id": 2, "name": "Выходит" },
                 "country": "Япония",
                 "genres": "драма, романтика"
               }
+            }
+            """
+        case "release.vote.add", "release.vote.delete":
+            json = """
+            { "code": 0 }
+            """
+        case "history.list":
+            json = """
+            {
+              "content": [
+                {
+                  "id": 1001,
+                  "title_ru": "История Mock",
+                  "year": "2026",
+                  "image": "https://example.test/history-1.jpg",
+                  "grade": 8.2,
+                  "episodes_released": 6,
+                  "episodes_total": 12,
+                  "is_favorite": true,
+                  "last_view_episode_name": "6 серия",
+                  "last_view_episode_type_name": "Mock source",
+                  "last_view_timestamp": 1782600000
+                },
+                {
+                  "id": 1003,
+                  "title_ru": "История Mock 2",
+                  "year": "2025",
+                  "image": "https://example.test/history-2.jpg",
+                  "grade": 7.4,
+                  "episodes_released": 3,
+                  "episodes_total": 10,
+                  "last_view_episode": { "name": "3 серия", "position": 3 },
+                  "last_view_episode_type_name": "AniMock",
+                  "last_view_timestamp": 1782513600000
+                }
+              ],
+              "currentPage": 0,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "history.delete", "history.add":
+            json = """
+            { "code": 0 }
+            """
+        case "release.comment.all":
+            json = """
+            {
+              "content": [
+                {
+                  "id": 9001,
+                  "message": "Mock-комментарий для полного экрана.",
+                  "timestamp": 1782600000,
+                  "vote": 2,
+                  "vote_count": 4,
+                  "reply_count": 1,
+                  "posted_at_episode": 6,
+                  "profile": { "id": 42, "login": "mock_user", "avatar": "https://example.test/avatar.png" }
+                },
+                {
+                  "id": 9002,
+                  "message": "Текст со спойлером, который должен быть скрыт до нажатия.",
+                  "timestamp": 1782601200,
+                  "vote": 0,
+                  "vote_count": 0,
+                  "reply_count": 0,
+                  "is_spoiler": true,
+                  "profile": { "id": 43, "login": "spoiler_user" }
+                }
+              ],
+              "currentPage": 0,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "release.comment.replies":
+            json = """
+            {
+              "content": [
+                {
+                  "id": 9101,
+                  "message": "Ответ из mock-режима.",
+                  "timestamp": 1782600500,
+                  "vote": 0,
+                  "vote_count": 1,
+                  "parent_comment_id": 9001,
+                  "is_reply": true,
+                  "profile": { "id": 44, "login": "reply_user" }
+                }
+              ],
+              "currentPage": 0,
+              "totalCount": 1,
+              "totalPageCount": 1
+            }
+            """
+        case "release.comment.add":
+            json = """
+            { "code": 0 }
+            """
+        case "release.comment.edit":
+            json = """
+            { "code": 0 }
+            """
+        case "release.comment.delete", "release.comment.vote", "release.comment.report":
+            json = """
+            { "code": 0 }
+            """
+        case "release.comment.votes":
+            json = """
+            {
+              "content": [
+                { "id": 42, "login": "mock_user", "avatar": "https://example.test/avatar.png" },
+                { "id": 44, "login": "reply_user" }
+              ],
+              "currentPage": 0,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "release.comment.report.reasons":
+            json = """
+            {
+              "reasons": [
+                { "id": 1, "name": "Спам" },
+                { "id": 2, "name": "Оскорбления" },
+                { "id": 3, "name": "Спойлер без отметки" }
+              ]
             }
             """
         case "schedule":

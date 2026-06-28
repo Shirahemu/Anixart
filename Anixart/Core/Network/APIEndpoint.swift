@@ -79,6 +79,24 @@ struct APIEndpoint: Equatable {
         APIEndpoint(name: "profile.social", method: .get, pathTemplate: "profile/social/{id}", pathParameters: ["id": "\(id)"], requiresToken: true)
     }
 
+    static func history(page: Int) -> APIEndpoint {
+        APIEndpoint(name: "history.list", method: .get, pathTemplate: "history/{page}", pathParameters: ["page": "\(page)"], requiresToken: true)
+    }
+
+    static func historyDelete(releaseId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "history.delete", method: .get, pathTemplate: "history/delete/{r_id}", pathParameters: ["r_id": "\(releaseId)"], requiresToken: true)
+    }
+
+    static func historyAdd(releaseId: Int64, sourceId: Int64, position: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "history.add",
+            method: .get,
+            pathTemplate: "history/add/{r_id}/{s_id}/{position}",
+            pathParameters: ["r_id": "\(releaseId)", "s_id": "\(sourceId)", "position": "\(position)"],
+            requiresToken: true
+        )
+    }
+
     static func release(id: Int64, extendedMode: Bool = true) -> APIEndpoint {
         APIEndpoint(
             name: "release.get",
@@ -100,6 +118,108 @@ struct APIEndpoint: Equatable {
 
     static func releaseVoteDelete(id: Int64) -> APIEndpoint {
         APIEndpoint(name: "release.vote.delete", method: .get, pathTemplate: "release/vote/delete/{r_id}", pathParameters: ["r_id": "\(id)"], requiresToken: true)
+    }
+
+    static func releaseCommentFirst(releaseId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "release.comment.first", method: .get, pathTemplate: "release/comment/{releaseId}", pathParameters: ["releaseId": "\(releaseId)"], requiresToken: true)
+    }
+
+    static func releaseComments(releaseId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.all",
+            method: .get,
+            pathTemplate: "release/comment/all/{releaseId}/{page}",
+            pathParameters: ["releaseId": "\(releaseId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseCommentAdd(releaseId: Int64, parentCommentId: Int64?, replyToProfileId: Int64?, message: String, isSpoiler: Bool) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.add",
+            method: .post,
+            pathTemplate: "release/comment/add/{releaseId}",
+            pathParameters: ["releaseId": "\(releaseId)"],
+            body: .json(.object([
+                "parentCommentId": parentCommentId.map { .number(Double($0)) } ?? .null,
+                "replyToProfileId": replyToProfileId.map { .number(Double($0)) } ?? .null,
+                "message": .string(message),
+                "is_spoiler": .bool(isSpoiler)
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func releaseCommentEdit(commentId: Int64, message: String, isSpoiler: Bool) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.edit",
+            method: .post,
+            pathTemplate: "release/comment/edit/{commentId}",
+            pathParameters: ["commentId": "\(commentId)"],
+            body: .json(.object([
+                "message": .string(message),
+                "spoiler": .bool(isSpoiler)
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func releaseCommentDelete(commentId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "release.comment.delete", method: .get, pathTemplate: "release/comment/delete/{commentId}", pathParameters: ["commentId": "\(commentId)"], requiresToken: true)
+    }
+
+    static func releaseCommentReplies(commentId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.replies",
+            method: .post,
+            pathTemplate: "release/comment/replies/{commentId}/{page}",
+            pathParameters: ["commentId": "\(commentId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseCommentVote(commentId: Int64, vote: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.vote",
+            method: .get,
+            pathTemplate: "release/comment/vote/{commentId}/{vote}",
+            pathParameters: ["commentId": "\(commentId)", "vote": "\(vote)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseCommentVotes(commentId: Int64, page: Int, sort: Int?) -> APIEndpoint {
+        var endpoint = APIEndpoint(
+            name: "release.comment.votes",
+            method: .get,
+            pathTemplate: "release/comment/votes/{commentId}/{page}",
+            pathParameters: ["commentId": "\(commentId)", "page": "\(page)"],
+            requiresToken: true
+        )
+        if let sort {
+            endpoint.queryItems["sort"] = "\(sort)"
+        }
+        return endpoint
+    }
+
+    static func releaseCommentReportReasons() -> APIEndpoint {
+        APIEndpoint(name: "release.comment.report.reasons", method: .get, pathTemplate: "report/comment/release/reasons", requiresToken: true)
+    }
+
+    static func releaseCommentReport(commentId: Int64, reasonId: Int64, message: String?) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.comment.report",
+            method: .post,
+            pathTemplate: "report/comment/release",
+            body: .json(.object([
+                "entity_id": .number(Double(commentId)),
+                "message": .string(message ?? ""),
+                "reason": .number(Double(reasonId))
+            ])),
+            requiresToken: true
+        )
     }
 
     static func episodeTypes(releaseId: Int64) -> APIEndpoint {

@@ -19,6 +19,9 @@ struct ReleaseDetailsView: View {
     @State private var profileStatusState: ProfileListStatus?
     @State private var isUpdatingFavorite = false
     @State private var isUpdatingProfileStatus = false
+    @State private var userRatingState: Int?
+    @State private var isUpdatingRating = false
+    @State private var ratingError: String?
     @State private var output = ""
     @State private var isLoadingRelease = false
     @State private var isLoadingEpisodes = false
@@ -35,6 +38,7 @@ struct ReleaseDetailsView: View {
         _isFavoriteState = State(initialValue: initialRelease?.isFavorite == true)
         _favoriteCountState = State(initialValue: initialRelease?.favoriteDisplayCount)
         _profileStatusState = State(initialValue: ProfileListStatus(rawValue: initialRelease?.profileListStatus ?? 0))
+        _userRatingState = State(initialValue: initialRelease?.normalizedUserRating)
     }
 
     var body: some View {
@@ -43,6 +47,7 @@ struct ReleaseDetailsView: View {
                 if let release {
                     heroCard(release)
                     watchCard
+                    ratingCard(release)
                     infoCard(release)
                     genresCard(release)
                     screenshotsCard(release)
@@ -276,6 +281,21 @@ struct ReleaseDetailsView: View {
         }
     }
 
+    private func ratingCard(_ release: Release) -> some View {
+        ReleaseRatingCardView(
+            release: release,
+            selectedRating: userRatingState,
+            isUpdating: isUpdatingRating,
+            errorMessage: ratingError,
+            onVote: { vote in
+                Task { await setUserRating(vote) }
+            },
+            onDelete: {
+                Task { await deleteUserRating() }
+            }
+        )
+    }
+
     private func infoCard(_ release: Release) -> some View {
         detailsCard(title: "Информация") {
             InfoRowView(title: "Страна", value: release.country)
@@ -400,11 +420,13 @@ struct ReleaseDetailsView: View {
 
     @ViewBuilder
     private func commentsCard(_ release: Release) -> some View {
-        if let comments = release.comments, !comments.isEmpty {
-            detailsCard(title: "Комментарии") {
+        let comments = release.comments ?? []
+        let shouldShowCommentsEntry = !comments.isEmpty || (release.commentCount ?? 0) > 0
+        if shouldShowCommentsEntry {
+            detailsCard(title: release.commentCount.map { "Комментарии · \($0)" } ?? "Комментарии") {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(comments.prefix(5), id: \.stableCommentID) { comment in
-                        CommentRowView(
+                        ReleaseDetailsCommentPreviewRowView(
                             comment: comment,
                             isSpoilerRevealed: revealedSpoilerCommentIDs.contains(comment.stableCommentID)
                         ) {
@@ -412,11 +434,22 @@ struct ReleaseDetailsView: View {
                         }
                     }
 
-                    if comments.count > 5 {
-                        Text("Показаны первые 5 комментариев")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    NavigationLink {
+                        ReleaseCommentsView(releaseId: release.id ?? releaseId, title: release.displayTitle)
+                    } label: {
+                        HStack {
+                            Text(comments.isEmpty ? "Показать все комментарии" : "Все комментарии")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 8)
                     }
+                    .buttonStyle(.plain)
+                    .disabled((release.id ?? releaseId) <= 0)
                 }
             }
         }
@@ -533,6 +566,34 @@ struct ReleaseDetailsView: View {
             "position": "\(route.episodePosition)"
         ])
         playerRoute = route
+        recordHistoryOpen(route)
+    }
+
+    private func recordHistoryOpen(_ route: PlayerRoute) {
+        Task {
+            appState.diagnosticsLogger.log(level: .info, category: .player, message: "History add started", metadata: [
+                "releaseId": "\(route.releaseId)",
+                "sourceId": "\(route.sourceId)",
+                "position": "\(route.episodePosition)"
+            ])
+            do {
+                let service = HistoryService(apiClient: appState.makeAPIClient())
+                let response = try await service.add(releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition)
+                appState.diagnosticsLogger.log(level: .info, category: .player, message: "History add succeeded", metadata: [
+                    "releaseId": "\(route.releaseId)",
+                    "sourceId": "\(route.sourceId)",
+                    "position": "\(route.episodePosition)",
+                    "code": response.code.map(String.init) ?? "-"
+                ])
+            } catch {
+                appState.diagnosticsLogger.log(level: .warning, category: .player, message: "History add failed", metadata: [
+                    "releaseId": "\(route.releaseId)",
+                    "sourceId": "\(route.sourceId)",
+                    "position": "\(route.episodePosition)",
+                    "error": Redactor.redact(error.localizedDescription)
+                ])
+            }
+        }
     }
 
     private func playerRoute(for episode: Episode) -> PlayerRoute? {
@@ -661,6 +722,7 @@ struct ReleaseDetailsView: View {
         isFavoriteState = release.isFavorite == true
         favoriteCountState = release.favoriteDisplayCount
         profileStatusState = ProfileListStatus(rawValue: release.profileListStatus ?? 0)
+        userRatingState = release.normalizedUserRating
     }
 
     private func toggleFavorite() async {
@@ -704,6 +766,132 @@ struct ReleaseDetailsView: View {
     private func adjustFavoriteCount(oldValue: Bool, newValue: Bool) {
         guard let count = favoriteCountState, oldValue != newValue else { return }
         favoriteCountState = newValue ? count + 1 : max(0, count - 1)
+    }
+
+    private func setUserRating(_ vote: Int) async {
+        guard let releaseId = releaseIDForInteraction else { return }
+        guard (1...5).contains(vote) else {
+            ratingError = "Оценка должна быть от 1 до 5"
+            return
+        }
+        guard appState.hasToken || appState.config.isMockMode else {
+            ratingError = "Для действия нужен вход в аккаунт"
+            return
+        }
+        guard userRatingState != vote else {
+            ratingError = nil
+            return
+        }
+
+        let oldVote = userRatingState
+        userRatingState = vote
+        isUpdatingRating = true
+        ratingError = nil
+        appState.diagnosticsLogger.log(level: .info, category: .release, message: "Release rating vote started", metadata: [
+            "releaseId": "\(releaseId)",
+            "oldVote": oldVote.map(String.init) ?? "nil",
+            "newVote": "\(vote)",
+            "voteCount": release?.ratingTotalCount.description ?? "-",
+            "grade": release?.grade.map { String(format: "%.1f", $0) } ?? "-"
+        ])
+        defer { isUpdatingRating = false }
+
+        do {
+            let service = ReleaseInteractionService(apiClient: appState.makeAPIClient())
+            let response = try await service.addVote(releaseId: releaseId, vote: vote)
+            guard response.code == nil || response.code == Response.successful else {
+                userRatingState = oldVote
+                ratingError = ratingFailureMessage(code: response.code, action: .vote)
+                appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating vote failed", metadata: [
+                    "releaseId": "\(releaseId)",
+                    "oldVote": oldVote.map(String.init) ?? "nil",
+                    "newVote": "\(vote)",
+                    "responseCode": response.code.map(String.init) ?? "-"
+                ])
+                return
+            }
+
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Release rating vote succeeded", metadata: [
+                "releaseId": "\(releaseId)",
+                "oldVote": oldVote.map(String.init) ?? "nil",
+                "newVote": "\(vote)",
+                "responseCode": response.code.map(String.init) ?? "-"
+            ])
+            await reloadReleaseOnly()
+        } catch {
+            userRatingState = oldVote
+            ratingError = DebugResultFormatter.error(error)
+            output = ratingError ?? ""
+            appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating vote failed", metadata: [
+                "releaseId": "\(releaseId)",
+                "oldVote": oldVote.map(String.init) ?? "nil",
+                "newVote": "\(vote)",
+                "error": ratingError ?? "-"
+            ])
+        }
+    }
+
+    private func deleteUserRating() async {
+        guard let releaseId = releaseIDForInteraction else { return }
+        guard appState.hasToken || appState.config.isMockMode else {
+            ratingError = "Для действия нужен вход в аккаунт"
+            return
+        }
+
+        let oldVote = userRatingState
+        guard oldVote != nil else { return }
+        userRatingState = nil
+        isUpdatingRating = true
+        ratingError = nil
+        appState.diagnosticsLogger.log(level: .info, category: .release, message: "Release rating delete started", metadata: [
+            "releaseId": "\(releaseId)",
+            "oldVote": oldVote.map(String.init) ?? "nil",
+            "voteCount": release?.ratingTotalCount.description ?? "-",
+            "grade": release?.grade.map { String(format: "%.1f", $0) } ?? "-"
+        ])
+        defer { isUpdatingRating = false }
+
+        do {
+            let service = ReleaseInteractionService(apiClient: appState.makeAPIClient())
+            let response = try await service.deleteVote(releaseId: releaseId)
+            guard response.code == nil || response.code == Response.successful else {
+                userRatingState = oldVote
+                ratingError = ratingFailureMessage(code: response.code, action: .delete)
+                appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating delete failed", metadata: [
+                    "releaseId": "\(releaseId)",
+                    "oldVote": oldVote.map(String.init) ?? "nil",
+                    "responseCode": response.code.map(String.init) ?? "-"
+                ])
+                return
+            }
+
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Release rating delete succeeded", metadata: [
+                "releaseId": "\(releaseId)",
+                "oldVote": oldVote.map(String.init) ?? "nil",
+                "responseCode": response.code.map(String.init) ?? "-"
+            ])
+            await reloadReleaseOnly()
+        } catch {
+            userRatingState = oldVote
+            ratingError = DebugResultFormatter.error(error)
+            output = ratingError ?? ""
+            appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating delete failed", metadata: [
+                "releaseId": "\(releaseId)",
+                "oldVote": oldVote.map(String.init) ?? "nil",
+                "error": ratingError ?? "-"
+            ])
+        }
+    }
+
+    private func ratingFailureMessage(code: Int?, action: RatingAction) -> String {
+        switch code {
+        case .some(Response.banned), .some(402), .some(403):
+            return "Пользователь заблокирован"
+        case .some:
+            return action == .vote ? "Не удалось сохранить оценку" : "Не удалось удалить оценку"
+        case nil:
+            return action == .vote ? "Не удалось сохранить оценку" : "Не удалось удалить оценку"
+        }
     }
 
     private func setProfileStatus(_ newStatus: ProfileListStatus?) async {
@@ -932,6 +1120,11 @@ private struct PickerItem: Identifiable {
     }
 }
 
+private enum RatingAction {
+    case vote
+    case delete
+}
+
 private struct FlowChipsView: View {
     let items: [String]
 
@@ -1093,7 +1286,7 @@ private struct ReleaseCollectionListView: View {
     }
 }
 
-private struct CommentRowView: View {
+private struct ReleaseDetailsCommentPreviewRowView: View {
     let comment: ReleaseComment
     let isSpoilerRevealed: Bool
     let onRevealSpoiler: () -> Void
@@ -1182,12 +1375,5 @@ private extension Episode {
     var stableEpisodeID: String {
         if let id { return "episode-\(id)" }
         return "episode-\(position.map(String.init) ?? UUID().uuidString)-\(name ?? "")"
-    }
-}
-
-private extension ReleaseComment {
-    var stableCommentID: String {
-        if let id { return "comment-\(id)" }
-        return "comment-\(timestamp ?? 0)-\(message ?? "")"
     }
 }

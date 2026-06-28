@@ -96,7 +96,7 @@ private struct RatedReleaseRow: View {
     }
 
     private var ratingText: String {
-        guard let vote = release.myVote ?? release.yourVote else {
+        guard let vote = release.normalizedUserRating else {
             return "Оценка неизвестна"
         }
         return "\(vote) / 5"
@@ -113,10 +113,4 @@ private struct RatedReleaseRow: View {
         formatter.setLocalizedDateFormatFromTemplate("d MMM y")
         return formatter
     }()
-}
-
-extension Release {
-    var userRating: Int? {
-        myVote ?? yourVote
-    }
 }

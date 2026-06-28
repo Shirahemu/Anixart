@@ -9,6 +9,10 @@ struct Response: Codable, Equatable {
     let code: Int?
 }
 
+struct HistoryResponse: Codable, Equatable {
+    let code: Int?
+}
+
 struct PageableResponse<T: Codable & Equatable>: Codable, Equatable {
     let content: [T]?
     let currentPage: Int?
