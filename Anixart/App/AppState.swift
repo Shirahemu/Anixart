@@ -30,6 +30,7 @@ final class AppState: ObservableObject {
 
     @Published private(set) var hasToken = false
     @Published var lastDebugEvent: APIDebugEvent?
+    let dataCache = AppDataCache()
     let diagnosticsStore: DiagnosticsStore
     let diagnosticsLogger: DiagnosticsLogger
 
@@ -110,6 +111,52 @@ final class AppState: ObservableObject {
             "profileId": session?.profileId.map(String.init) ?? "-",
             "login": session?.login ?? "-"
         ])
+    }
+
+    func updateTokenAfterPasswordChange(_ token: String) {
+        guard !token.isEmpty else { return }
+        do {
+            try activeTokenStorage.setToken(token)
+            refreshTokenStatus()
+            diagnosticsLogger.log(level: .info, category: .session, message: "Password change token stored", metadata: [
+                "hasToken": hasToken ? "true" : "false"
+            ])
+        } catch {
+            diagnosticsLogger.log(level: .error, category: .session, message: "Password change token store failed", metadata: [
+                "error": Redactor.redact(error.localizedDescription)
+            ])
+        }
+    }
+
+    func updateSessionProfile(login: String? = nil, avatar: String? = nil) {
+        guard var session else { return }
+        if let login { session.login = login }
+        if let avatar { session.avatar = avatar }
+        self.session = session
+    }
+
+    func updateCachedMyProfile(
+        login: String? = nil,
+        avatar: String? = nil,
+        status: String? = nil,
+        vkPage: String? = nil,
+        tgPage: String? = nil,
+        instPage: String? = nil,
+        ttPage: String? = nil,
+        discordPage: String? = nil
+    ) {
+        guard let profileId = session?.profileId else { return }
+        dataCache.updateProfile(
+            id: profileId,
+            login: login,
+            avatar: avatar,
+            status: status,
+            vkPage: vkPage,
+            tgPage: tgPage,
+            instPage: instPage,
+            ttPage: ttPage,
+            discordPage: discordPage
+        )
     }
 
     func signOut() {

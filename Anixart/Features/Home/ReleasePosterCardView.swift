@@ -8,7 +8,12 @@ struct ReleasePosterCardView: View {
             ZStack(alignment: .topTrailing) {
                 PosterImageView(urlString: release.posterURLString, cornerRadius: 10)
 
-                if release.isFavorite == true || (release.profileListStatus ?? 0) > 0 {
+                if let statusTitle = release.personalStatusTitle {
+                    ReleasePersonalStatusOverlay(statusTitle: statusTitle)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+
+                if release.isFavorite == true {
                     Image(systemName: "bookmark.fill")
                         .font(.caption)
                         .foregroundStyle(.white)
@@ -22,13 +27,15 @@ struct ReleasePosterCardView: View {
             Text(release.displayTitle)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: StableReleaseCardMetrics.titleHeight, alignment: .topLeading)
 
             Text(homeSubtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: StableReleaseCardMetrics.subtitleHeight, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
     }
 
@@ -42,6 +49,7 @@ struct ReleasePosterCardView: View {
 
 struct ReleaseGridView: View {
     let releases: [Release]
+    var onReleaseAppear: (Release) -> Void = { _ in }
 
     private let columns = [
         GridItem(.flexible(minimum: 132), spacing: 16),
@@ -58,6 +66,9 @@ struct ReleaseGridView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(release.id == nil)
+                .onAppear {
+                    onReleaseAppear(release)
+                }
             }
         }
     }
@@ -69,26 +80,17 @@ struct PosterImageView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let width = Self.safeDimension(proxy.size.width)
+            let height = Self.safeDimension(proxy.size.height)
             ZStack {
                 placeholder
-                if let urlString, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .empty:
-                            ProgressView()
-                        case .failure(_):
-                            EmptyView()
-                        @unknown default:
-                            EmptyView()
-                        }
+                if let urlString {
+                    CachedRemoteImageView(urlString: urlString, contentMode: .fill) {
+                        placeholder
                     }
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            .frame(width: width, height: height)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
@@ -101,5 +103,10 @@ struct PosterImageView: View {
                 Image(systemName: "play.rectangle")
                     .foregroundStyle(.secondary)
             }
+    }
+
+    private static func safeDimension(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite, value > 0 else { return 1 }
+        return value
     }
 }

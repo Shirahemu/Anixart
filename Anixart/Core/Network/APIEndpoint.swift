@@ -1,11 +1,23 @@
 import Foundation
 
+struct MultipartBody: Equatable {
+    var fields: [String: String]
+    var files: [MultipartFile]
+}
+
+struct MultipartFile: Equatable {
+    var fieldName: String
+    var fileName: String
+    var mimeType: String
+    var data: Data
+}
+
 struct APIEndpoint: Equatable {
     enum Body: Equatable {
         case none
         case form([String: String])
         case json(JSONValue)
-        case multipartPlaceholder
+        case multipart(MultipartBody)
     }
 
     let name: String
@@ -77,6 +89,173 @@ struct APIEndpoint: Equatable {
 
     static func profileSocial(id: Int64) -> APIEndpoint {
         APIEndpoint(name: "profile.social", method: .get, pathTemplate: "profile/social/{id}", pathParameters: ["id": "\(id)"], requiresToken: true)
+    }
+
+    static func profilePreferenceMy() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.my", method: .get, pathTemplate: "profile/preference/my", requiresToken: true)
+    }
+
+    static func profilePreferenceSocial() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.social", method: .get, pathTemplate: "profile/preference/social", requiresToken: true)
+    }
+
+    static func profilePreferenceStatusEdit(status: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.status.edit",
+            method: .post,
+            pathTemplate: "profile/preference/status/edit",
+            body: .json(.object(["status": .string(status)])),
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceStatusDelete() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.status.delete", method: .get, pathTemplate: "profile/preference/status/delete", requiresToken: true)
+    }
+
+    static func profilePreferenceSocialEdit(vkPage: String, tgPage: String, instPage: String, ttPage: String, discordPage: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.social.edit",
+            method: .post,
+            pathTemplate: "profile/preference/social/edit",
+            body: .json(.object([
+                "vkPage": .string(vkPage),
+                "tgPage": .string(tgPage),
+                "instPage": .string(instPage),
+                "ttPage": .string(ttPage),
+                "discordPage": .string(discordPage)
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferencePrivacyCountsEdit(permission: Int) -> APIEndpoint {
+        profilePreferencePrivacyEdit(name: "profile.preference.privacy.counts.edit", path: "profile/preference/privacy/counts/edit", permission: permission)
+    }
+
+    static func profilePreferencePrivacyStatsEdit(permission: Int) -> APIEndpoint {
+        profilePreferencePrivacyEdit(name: "profile.preference.privacy.stats.edit", path: "profile/preference/privacy/stats/edit", permission: permission)
+    }
+
+    static func profilePreferencePrivacySocialEdit(permission: Int) -> APIEndpoint {
+        profilePreferencePrivacyEdit(name: "profile.preference.privacy.social.edit", path: "profile/preference/privacy/social/edit", permission: permission)
+    }
+
+    static func profilePreferencePrivacyFriendRequestsEdit(permission: Int) -> APIEndpoint {
+        profilePreferencePrivacyEdit(name: "profile.preference.privacy.friendRequests.edit", path: "profile/preference/privacy/friendRequests/edit", permission: permission)
+    }
+
+    private static func profilePreferencePrivacyEdit(name: String, path: String, permission: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: name,
+            method: .post,
+            pathTemplate: path,
+            body: .json(.object(["permission": .number(Double(permission))])),
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceLoginInfo() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.login.info", method: .post, pathTemplate: "profile/preference/login/info", requiresToken: true)
+    }
+
+    static func profilePreferenceLoginChange(login: String) -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.login.change", method: .post, pathTemplate: "profile/preference/login/change", queryItems: ["login": login], requiresToken: true)
+    }
+
+    static func profilePreferencePasswordChange(currentPassword: String, newPassword: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.password.change",
+            method: .get,
+            pathTemplate: "profile/preference/password/change",
+            queryItems: ["current": currentPassword, "new": newPassword],
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceEmailChange(currentPassword: String, currentEmail: String, newEmail: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.email.change",
+            method: .get,
+            pathTemplate: "profile/preference/email/change",
+            queryItems: ["current_password": currentPassword, "current": currentEmail, "new": newEmail],
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceEmailChangeConfirm(currentPassword: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.email.change.confirm",
+            method: .get,
+            pathTemplate: "profile/preference/email/change/confirm",
+            queryItems: ["current": currentPassword],
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceAvatarEdit(imageData: Data, fileName: String, mimeType: String, name: String = "image") -> APIEndpoint {
+        APIEndpoint(
+            name: "profile.preference.avatar.edit",
+            method: .post,
+            pathTemplate: "profile/preference/avatar/edit",
+            body: .multipart(MultipartBody(
+                fields: ["name": name],
+                files: [MultipartFile(fieldName: "image", fileName: fileName, mimeType: mimeType, data: imageData)]
+            )),
+            requiresToken: true
+        )
+    }
+
+    static func profilePreferenceVKUnbind() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.vk.unbind", method: .post, pathTemplate: "profile/preference/vk/unbind", requiresToken: true)
+    }
+
+    static func profilePreferenceGoogleUnbind() -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.google.unbind", method: .post, pathTemplate: "profile/preference/google/unbind", requiresToken: true)
+    }
+
+    static func profilePreferenceVKBind(accessToken: String) -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.vk.bind", method: .post, pathTemplate: "profile/preference/vk/bind", body: .form(["accessToken": accessToken]), requiresToken: true)
+    }
+
+    static func profilePreferenceGoogleBind(idToken: String) -> APIEndpoint {
+        APIEndpoint(name: "profile.preference.google.bind", method: .post, pathTemplate: "profile/preference/google/bind", body: .form(["idToken": idToken]), requiresToken: true)
+    }
+
+    static func profileFriends(profileId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.all", method: .get, pathTemplate: "profile/friend/all/{id}/{page}", pathParameters: ["id": "\(profileId)", "page": "\(page)"], requiresToken: true)
+    }
+
+    static func profileFriendRecommendations() -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.recommendations", method: .get, pathTemplate: "profile/friend/recommendations", requiresToken: true)
+    }
+
+    static func profileFriendRequestSend(profileId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.request.send", method: .get, pathTemplate: "profile/friend/request/send/{id}", pathParameters: ["id": "\(profileId)"], requiresToken: true)
+    }
+
+    static func profileFriendRequestRemove(profileId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.request.remove", method: .get, pathTemplate: "profile/friend/request/remove/{id}", pathParameters: ["id": "\(profileId)"], requiresToken: true)
+    }
+
+    static func profileFriendRequestHide(profileId: Int64) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.request.hide", method: .get, pathTemplate: "profile/friend/request/hide/{id}", pathParameters: ["id": "\(profileId)"], requiresToken: true)
+    }
+
+    static func profileFriendRequestsIn(page: Int) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.requests.in", method: .get, pathTemplate: "profile/friend/requests/in/{page}", pathParameters: ["page": "\(page)"], requiresToken: true)
+    }
+
+    static func profileFriendRequestsInLast() -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.requests.in.last", method: .get, pathTemplate: "profile/friend/requests/in/last", requiresToken: true)
+    }
+
+    static func profileFriendRequestsOut(page: Int) -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.requests.out", method: .get, pathTemplate: "profile/friend/requests/out/{page}", pathParameters: ["page": "\(page)"], requiresToken: true)
+    }
+
+    static func profileFriendRequestsOutLast() -> APIEndpoint {
+        APIEndpoint(name: "profile.friend.requests.out.last", method: .get, pathTemplate: "profile/friend/requests/out/last", requiresToken: true)
     }
 
     static func history(page: Int) -> APIEndpoint {
@@ -285,8 +464,12 @@ struct APIEndpoint: Equatable {
         APIEndpoint(name: "schedule", method: .get, pathTemplate: "schedule")
     }
 
-    static func favoriteAll(page: Int) -> APIEndpoint {
-        APIEndpoint(name: "favorite.all", method: .get, pathTemplate: "favorite/all/{page}", pathParameters: ["page": "\(page)"], requiresToken: true)
+    static func favoriteAll(page: Int, sort: Int? = nil) -> APIEndpoint {
+        var endpoint = APIEndpoint(name: "favorite.all", method: .get, pathTemplate: "favorite/all/{page}", pathParameters: ["page": "\(page)"], requiresToken: true)
+        if let sort {
+            endpoint.queryItems["sort"] = "\(sort)"
+        }
+        return endpoint
     }
 
     static func favoriteAdd(id: Int64) -> APIEndpoint {
@@ -297,8 +480,26 @@ struct APIEndpoint: Equatable {
         APIEndpoint(name: "favorite.delete", method: .get, pathTemplate: "favorite/delete/{r_id}", pathParameters: ["r_id": "\(id)"], requiresToken: true)
     }
 
-    static func profileListAll(status: Int, page: Int) -> APIEndpoint {
-        APIEndpoint(name: "profile.list.all", method: .get, pathTemplate: "profile/list/all/{status}/{page}", pathParameters: ["status": "\(status)", "page": "\(page)"], requiresToken: true)
+    static func profileListAll(status: Int, page: Int, sort: Int? = nil) -> APIEndpoint {
+        var endpoint = APIEndpoint(name: "profile.list.all", method: .get, pathTemplate: "profile/list/all/{status}/{page}", pathParameters: ["status": "\(status)", "page": "\(page)"], requiresToken: true)
+        if let sort {
+            endpoint.queryItems["sort"] = "\(sort)"
+        }
+        return endpoint
+    }
+
+    static func profileVoteReleaseVoted(profileId: Int64, page: Int, sort: Int? = nil) -> APIEndpoint {
+        var endpoint = APIEndpoint(
+            name: "profile.vote.release.voted",
+            method: .get,
+            pathTemplate: "profile/vote/release/voted/{profileId}/{page}",
+            pathParameters: ["profileId": "\(profileId)", "page": "\(page)"],
+            requiresToken: true
+        )
+        if let sort {
+            endpoint.queryItems["sort"] = "\(sort)"
+        }
+        return endpoint
     }
 
     static func profileListAdd(status: Int, releaseId: Int64) -> APIEndpoint {
@@ -377,26 +578,33 @@ extension APIEndpoint.Body {
     var diagnosticKeys: String {
         switch self {
         case .none:
-            ""
+            return ""
         case .form(let fields):
-            fields.keys.sorted().joined(separator: ",")
+            return fields.keys.sorted().joined(separator: ",")
         case .json(let value):
-            value.objectKeys.joined(separator: ",")
-        case .multipartPlaceholder:
-            "multipart"
+            return value.objectKeys.joined(separator: ",")
+        case .multipart(let body):
+            let fields = body.fields.keys.sorted().joined(separator: ",")
+            let files = body.files.map(\.fieldName).sorted().joined(separator: ",")
+            return "fields:\(fields);files:\(files)"
         }
     }
 
     var diagnosticPreview: String {
         switch self {
         case .none:
-            ""
+            return ""
         case .form(let fields):
-            RedactionPolicy.redact(metadata: fields).map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "&")
+            return RedactionPolicy.redact(metadata: fields).map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "&")
         case .json(let value):
-            value.diagnosticDescription
-        case .multipartPlaceholder:
-            "multipart"
+            return value.diagnosticDescription
+        case .multipart(let body):
+            let fields = body.fields.keys.sorted().joined(separator: ",")
+            let files = body.files
+                .map { "\($0.fieldName)/\($0.fileName)/\($0.mimeType)/\($0.data.count) bytes" }
+                .sorted()
+                .joined(separator: ",")
+            return "fields:\(fields);files:\(files)"
         }
     }
 }

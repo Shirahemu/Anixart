@@ -46,6 +46,9 @@ struct Profile: Codable, Equatable, Identifiable {
     let isStatsHidden: Bool?
     let isSocialHidden: Bool?
     let isSocial: Bool?
+    let isBlocked: Bool?
+    let isMeBlocked: Bool?
+    let isFriendRequestsDisallowed: Bool?
     let friendStatus: Int?
 
     let vkPage: String?
@@ -108,6 +111,9 @@ struct Profile: Codable, Equatable, Identifiable {
         case isStatsHidden
         case isSocialHidden
         case isSocial
+        case isBlocked
+        case isMeBlocked
+        case isFriendRequestsDisallowed
         case friendStatus
         case vkPage
         case tgPage
@@ -137,6 +143,7 @@ struct Profile: Codable, Equatable, Identifiable {
 
         favoriteCount = container.decodeLossyInt(forKey: .favoriteCount)
         friendCount = container.decodeLossyInt(forKey: .friendCount)
+            ?? dynamic.decodeFlexibleInt(for: "friend_count")
         commentCount = container.decodeLossyInt(forKey: .commentCount)
         videoCount = container.decodeLossyInt(forKey: .videoCount)
         collectionCount = container.decodeLossyInt(forKey: .collectionCount)
@@ -151,6 +158,7 @@ struct Profile: Codable, Equatable, Identifiable {
         votes = container.decodeLossyArray([Release].self, forKey: .votes)
         history = container.decodeLossyArray([Release].self, forKey: .history)
         friendsPreview = container.decodeLossyArray([Profile].self, forKey: .friendsPreview)
+            ?? dynamic.decodeLossyArray([Profile].self, forKey: AnyCodingKey("friends_preview"))
         commentsPreview = container.decodeLossyArray([ReleaseComment].self, forKey: .commentsPreview)
         collectionsPreview = container.decodeLossyArray([CollectionPreview].self, forKey: .collectionsPreview)
         releaseVideosPreview = container.decodeLossyArray([ReleaseVideo].self, forKey: .releaseVideosPreview)
@@ -165,7 +173,15 @@ struct Profile: Codable, Equatable, Identifiable {
         isStatsHidden = container.decodeLossyBool(forKey: .isStatsHidden)
         isSocialHidden = container.decodeLossyBool(forKey: .isSocialHidden)
         isSocial = container.decodeLossyBool(forKey: .isSocial)
+            ?? dynamic.decodeFlexibleBool(for: "is_social")
+        isBlocked = container.decodeLossyBool(forKey: .isBlocked)
+            ?? dynamic.decodeFlexibleBool(for: "is_blocked")
+        isMeBlocked = container.decodeLossyBool(forKey: .isMeBlocked)
+            ?? dynamic.decodeFlexibleBool(for: "is_me_blocked")
+        isFriendRequestsDisallowed = container.decodeLossyBool(forKey: .isFriendRequestsDisallowed)
+            ?? dynamic.decodeFlexibleBool(for: "is_friend_requests_disallowed")
         friendStatus = container.decodeLossyInt(forKey: .friendStatus)
+            ?? dynamic.decodeFlexibleInt(for: "friend_status")
 
         vkPage = container.decodeLossyString(forKey: .vkPage)
         tgPage = container.decodeLossyString(forKey: .tgPage)
@@ -188,6 +204,10 @@ extension KeyedDecodingContainer where Key == AnyCodingKey {
             return Int64(value)
         }
         return nil
+    }
+
+    func decodeFlexibleInt(for key: String) -> Int? {
+        decodeFlexibleInt64(for: key).map(Int.init)
     }
 }
 
@@ -255,7 +275,227 @@ struct ProfileResponse: Codable, Equatable {
     let profile: Profile?
 }
 
+extension Profile {
+    var friendStableID: String {
+        if let id { return "profile-\(id)" }
+        return "profile-\(login ?? UUID().uuidString)"
+    }
+
+    var friendSubtitle: String {
+        if let friendCount {
+            return "\(friendCount) друзей"
+        }
+        return isOnline == true ? "онлайн" : "офлайн"
+    }
+}
+
 struct ProfileSocialResponse: Codable, Equatable {
     let code: Int?
     let profile: Profile?
+}
+
+struct ProfilePreferenceResponse: Codable, Equatable {
+    let code: Int?
+    let avatar: String?
+    let status: String?
+    let vkPage: String?
+    let tgPage: String?
+    let instPage: String?
+    let ttPage: String?
+    let discordPage: String?
+    let isChangeAvatarBanned: Bool?
+    let banChangeAvatarExpires: Int64?
+    let isChangeLoginBanned: Bool?
+    let banChangeLoginExpires: Int64?
+    let isLoginChanged: Bool?
+    let isVkBound: Bool?
+    let isGoogleBound: Bool?
+    let privacyCounts: Int?
+    let privacyStats: Int?
+    let privacySocial: Int?
+    let privacyFriendRequests: Int?
+}
+
+struct ProfileSocialPreferenceResponse: Codable, Equatable {
+    let code: Int?
+    let vkPage: String?
+    let tgPage: String?
+    let instPage: String?
+    let ttPage: String?
+    let discordPage: String?
+}
+
+struct ChangeLoginInfoResponse: Codable, Equatable {
+    let code: Int?
+    let login: String?
+    let avatar: String?
+    let isChangeAvailable: Bool?
+    let lastChangeAt: Int64?
+    let nextChangeAvailableAt: Int64?
+}
+
+struct ChangeLoginResponse: Codable, Equatable {
+    let code: Int?
+}
+
+struct ChangePasswordResponse: Codable, Equatable {
+    let code: Int?
+    let token: String?
+}
+
+struct ChangeEmailResponse: Codable, Equatable {
+    let code: Int?
+}
+
+struct ChangeEmailConfirmResponse: Codable, Equatable {
+    let code: Int?
+    let emailHint: String?
+}
+
+struct SocialEditResponse: Codable, Equatable {
+    let code: Int?
+}
+
+struct ExternalBindResponse: Codable, Equatable {
+    let code: Int?
+}
+
+struct ExternalUnbindResponse: Codable, Equatable {
+    let code: Int?
+}
+
+enum ProfilePreferenceMessages {
+    static func generic(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Готово"
+        case 402:
+            return "Изменение временно запрещено"
+        case 403:
+            return "Изменение запрещено"
+        default:
+            return "Не удалось сохранить изменения"
+        }
+    }
+
+    static func login(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Логин изменён"
+        case 2:
+            return "Некорректный логин"
+        case 3:
+            return "Этот логин уже занят"
+        case 4:
+            return "Логин пока нельзя изменить"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func password(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Пароль изменён"
+        case 2:
+            return "Некорректный новый пароль"
+        case 3:
+            return "Текущий пароль указан неверно"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func emailChange(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Письмо для подтверждения отправлено"
+        case 2:
+            return "Некорректный email"
+        case 3:
+            return "Текущий email указан неверно"
+        case 4:
+            return "Этот email уже занят"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func emailConfirm(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Email подтверждён"
+        case 2:
+            return "Пароль указан неверно"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func social(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Социальные сети сохранены"
+        case 2:
+            return "Некорректная ссылка VK"
+        case 3:
+            return "Некорректная ссылка Telegram"
+        case 4:
+            return "Некорректная ссылка Instagram"
+        case 5:
+            return "Некорректная ссылка TikTok"
+        case 6:
+            return "Некорректная ссылка Discord"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func vkBind(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "VK привязан"
+        case 2:
+            return "Некорректный запрос VK"
+        case 3:
+            return "VK уже привязан"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func vkUnbind(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "VK отвязан"
+        case 2:
+            return "VK не был привязан"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func googleBind(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Google привязан"
+        case 2:
+            return "Некорректный запрос Google"
+        case 3:
+            return "Google уже привязан"
+        default:
+            return generic(code)
+        }
+    }
+
+    static func googleUnbind(_ code: Int?) -> String {
+        switch code {
+        case 0, nil:
+            return "Google отвязан"
+        case 2:
+            return "Google не был привязан"
+        default:
+            return generic(code)
+        }
+    }
 }

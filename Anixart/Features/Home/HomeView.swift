@@ -6,85 +6,79 @@ struct HomeView: View {
     @State private var releases: [Release] = []
     @State private var output = ""
     @State private var isLoading = false
+    @State private var isLoadingMore = false
+    @State private var loadedPage = -1
+    @State private var canLoadMore = true
     @State private var didLoad = false
+    @State private var searchQuery = ""
+    @State private var searchResults: [Release] = []
+    @State private var searchOutput = ""
+    @State private var isSearchLoading = false
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                header
                 categoryTabs
 
-                if isLoading {
-                    ProgressView("Загрузка...")
+                if activeLoading && activeReleases.isEmpty {
+                    ProgressView(isSearchActive ? "Ищем..." : "Загрузка...")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 28)
                 }
 
-                if !releases.isEmpty {
-                    ReleaseGridView(releases: releases)
-                } else if !isLoading {
+                if !activeReleases.isEmpty {
+                    ReleaseGridView(releases: activeReleases) { release in
+                        Task { await loadMoreIfNeeded(current: release) }
+                    }
+                } else if !activeLoading {
                     ContentUnavailableView(
-                        "Нет релизов",
-                        systemImage: "rectangle.stack",
-                        description: Text(output.isEmpty ? "Обновите ленту или выберите другую вкладку." : output)
+                        isSearchActive ? "Ничего не найдено" : "Нет релизов",
+                        systemImage: isSearchActive ? "magnifyingglass" : "rectangle.stack",
+                        description: Text(contentUnavailableOutput)
                     )
                 }
 
-                if !output.isEmpty && !releases.isEmpty {
-                    Text(output)
+                if !activeOutput.isEmpty && !activeReleases.isEmpty {
+                    Text(activeOutput)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                if !isSearchActive && isLoadingMore {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
                 }
             }
             .padding()
         }
+        .swipeNavigation(items: HomeCategory.allCases, selected: $selectedCategory) { category in
+            handleCategoryChange(category, source: "swipe")
+        }
         .navigationTitle("Главная")
-        .toolbar {
-            Button {
-                Task { await loadSelectedCategory() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .disabled(isLoading)
-            .accessibilityLabel("Обновить")
+        .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Поиск аниме")
+        .onSubmit(of: .search) {
+            searchTask?.cancel()
+            Task { await searchHome() }
+        }
+        .onChange(of: searchQuery) { _, newValue in
+            handleSearchQueryChange(newValue)
         }
         .refreshable {
-            await loadSelectedCategory()
+            if isSearchActive {
+                await searchHome()
+            } else {
+                await refreshHome()
+            }
         }
         .task {
             guard !didLoad else { return }
             didLoad = true
-            await loadSelectedCategory()
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            NavigationLink {
-                SearchView()
-            } label: {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                    Text("Поиск аниме")
-                    Spacer()
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            applyCachedHomeFeed(for: selectedCategory)
+            if releases.isEmpty {
+                await loadSelectedCategory()
             }
-            .buttonStyle(.plain)
-
-            NavigationLink {
-                SettingsView()
-            } label: {
-                Image(systemName: "gearshape")
-                    .frame(width: 38, height: 38)
-                    .background(Color.secondary.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Настройки")
         }
     }
 
@@ -93,12 +87,7 @@ struct HomeView: View {
             HStack(spacing: 10) {
                 ForEach(HomeCategory.allCases) { category in
                     Button {
-                        selectedCategory = category
-                        appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home tab selected", metadata: [
-                            "category": category.title,
-                            "statusId": category.statusId.map(String.init) ?? "-"
-                        ])
-                        Task { await loadSelectedCategory() }
+                        handleCategoryChange(category, source: "tap")
                     } label: {
                         Text(category.title)
                             .font(.subheadline.weight(.medium))
@@ -113,41 +102,253 @@ struct HomeView: View {
         }
     }
 
-    private func loadSelectedCategory() async {
-        isLoading = true
-        defer { isLoading = false }
+    private var trimmedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearchActive: Bool {
+        !trimmedSearchQuery.isEmpty
+    }
+
+    private var activeReleases: [Release] {
+        isSearchActive ? searchResults : releases
+    }
+
+    private var activeLoading: Bool {
+        isSearchActive ? isSearchLoading : isLoading
+    }
+
+    private var activeOutput: String {
+        isSearchActive ? searchOutput : output
+    }
+
+    private var contentUnavailableOutput: String {
+        if isSearchActive {
+            return searchOutput.isEmpty ? "По запросу «\(trimmedSearchQuery)» ничего нет." : searchOutput
+        }
+        return output.isEmpty ? "Обновите ленту или выберите другую вкладку." : output
+    }
+
+    private func handleSearchQueryChange(_ value: String) {
+        searchTask?.cancel()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchResults = []
+            searchOutput = ""
+            isSearchLoading = false
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            await searchHome(query: trimmed)
+        }
+    }
+
+    private func searchHome(query explicitQuery: String? = nil) async {
+        let query = explicitQuery ?? trimmedSearchQuery
+        guard !query.isEmpty else { return }
+        isSearchLoading = true
+        defer { isSearchLoading = false }
+
+        do {
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home search started", metadata: [
+                "queryLength": "\(query.count)"
+            ])
+            let service = SearchService(apiClient: appState.makeAPIClient())
+            let response = try await service.releases(query: query)
+            guard query == trimmedSearchQuery else { return }
+            searchResults = response.releases ?? []
+            searchOutput = searchResults.isEmpty ? "По запросу «\(query)» релизы не декодированы." : ""
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home search succeeded", metadata: [
+                "queryLength": "\(query.count)",
+                "resultCount": "\(searchResults.count)"
+            ])
+        } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .home, message: "Home search cancelled", metadata: [
+                    "queryLength": "\(query.count)"
+                ])
+                return
+            }
+            searchResults = []
+            searchOutput = DebugResultFormatter.error(error)
+            appState.diagnosticsLogger.log(level: .error, category: .home, message: "Home search failed", metadata: [
+                "queryLength": "\(query.count)",
+                "error": searchOutput
+            ])
+        }
+    }
+
+    private func handleCategoryChange(_ category: HomeCategory, source: String) {
+        guard selectedCategory != category || source == "swipe" else { return }
+        let oldCategory = selectedCategory
+        selectedCategory = category
+        appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home tab selected", metadata: [
+            "screen": "home",
+            "oldTab": oldCategory.title,
+            "newTab": category.title,
+            "category": category.title,
+            "statusId": category.statusId.map(String.init) ?? "-",
+            "tab_change_source": source
+        ])
+        applyCachedHomeFeed(for: category)
+        Task { await loadSelectedCategory() }
+    }
+
+    private func applyCachedHomeFeed(for category: HomeCategory) {
+        if let cached = appState.dataCache.homeFeedEntry(for: category) {
+            releases = cached.releases
+            loadedPage = cached.loadedPage
+            canLoadMore = cached.canLoadMore
+            output = ""
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home cache restored", metadata: [
+                "category": category.title,
+                "count": "\(cached.releases.count)",
+                "loadedPage": "\(cached.loadedPage)",
+                "canLoadMore": cached.canLoadMore ? "true" : "false"
+            ])
+        } else {
+            releases = []
+            loadedPage = -1
+            canLoadMore = true
+            output = ""
+            appState.diagnosticsLogger.log(level: .debug, category: .home, message: "Home cache miss", metadata: [
+                "category": category.title
+            ])
+        }
+    }
+
+    private func loadSelectedCategory(forceRefresh: Bool = false) async {
+        if !forceRefresh && !releases.isEmpty {
+            return
+        }
+        await loadHomePage(0, reset: true, forceRefresh: forceRefresh)
+    }
+
+    private func refreshHome() async {
+        if selectedCategory != .latest {
+            selectedCategory = .latest
+            applyCachedHomeFeed(for: .latest)
+        }
+        await loadSelectedCategory(forceRefresh: true)
+    }
+
+    private func loadMoreIfNeeded(current release: Release) async {
+        guard !isSearchActive,
+              canLoadMore,
+              !isLoading,
+              !isLoadingMore,
+              !releases.isEmpty,
+              shouldLoadMore(afterAppearing: release)
+        else {
+            return
+        }
+
+        await loadHomePage(max(loadedPage + 1, 0), reset: false)
+    }
+
+    private func shouldLoadMore(afterAppearing release: Release) -> Bool {
+        let triggerIndex = max(releases.count - 6, 0)
+        guard let index = releases.firstIndex(where: { $0.stableListID == release.stableListID }) else {
+            return false
+        }
+        return index >= triggerIndex
+    }
+
+    private func loadHomePage(_ page: Int, reset: Bool, forceRefresh: Bool = false) async {
+        let category = selectedCategory
+        let hadVisibleData = !releases.isEmpty
+        if reset {
+            isLoading = true
+        } else {
+            isLoadingMore = true
+        }
+        defer {
+            if reset {
+                isLoading = false
+            } else {
+                isLoadingMore = false
+            }
+        }
 
         do {
             let service = HomeFeedService(apiClient: appState.makeAPIClient())
-            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home feed request started", metadata: [
-                "category": selectedCategory.title,
-                "endpoint": "filter/0",
-                "filterBody": selectedCategory.filterBody.diagnosticDescription,
-                "statusId": selectedCategory.statusId.map(String.init) ?? "-",
-                "categoryId": "-"
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: reset ? "Home feed request started" : "Home next page load started", metadata: [
+                "category": category.title,
+                "endpoint": "filter/\(page)",
+                "page": "\(page)",
+                "filterBody": category.filterBody.diagnosticDescription,
+                "statusId": category.statusId.map(String.init) ?? "-",
+                "categoryId": "-",
+                "cacheVisible": hadVisibleData ? "true" : "false",
+                "forceRefresh": forceRefresh ? "true" : "false"
             ])
-            let result = try await service.feed(for: selectedCategory)
-            releases = result.releases
-            output = releases.isEmpty ? "Ответ получен, но релизы не декодированы." : ""
-            appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home feed request succeeded", metadata: [
-                "category": selectedCategory.title,
-                "endpoint": "filter/0",
+
+            let result = try await service.feed(for: category, page: page)
+            guard category == selectedCategory else { return }
+
+            if reset {
+                releases = result.releases
+                loadedPage = page
+                canLoadMore = !result.releases.isEmpty
+            } else {
+                let merged = HomeFeedPagination.appendUnique(existing: releases, incoming: result.releases)
+                releases = merged.releases
+                loadedPage = page
+                canLoadMore = !result.releases.isEmpty && merged.insertedCount > 0
+                if merged.insertedCount == 0 {
+                    output = result.releases.isEmpty ? "Лента загружена полностью." : "Новых релизов на следующей странице нет."
+                }
+            }
+
+            appState.dataCache.storeHomeFeedEntry(
+                HomeFeedCacheEntry(
+                    releases: releases,
+                    loadedPage: loadedPage,
+                    canLoadMore: canLoadMore,
+                    updatedAt: Date()
+                ),
+                for: category
+            )
+            if releases.isEmpty {
+                output = "Ответ получен, но релизы не декодированы."
+            } else if reset {
+                output = ""
+            }
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: reset ? "Home feed request succeeded" : "Home next page load succeeded", metadata: [
+                "category": category.title,
+                "endpoint": "filter/\(page)",
+                "page": "\(page)",
                 "rawCount": "\(result.rawCount)",
                 "resultCount": "\(result.releases.count)",
+                "visibleCount": "\(releases.count)",
                 "droppedCount": "\(result.droppedCount)",
                 "episodeLastUpdateCount": "\(result.hasEpisodeLastUpdateCount)",
                 "firstItemsRaw": result.firstItemsBefore.joined(separator: " | "),
                 "firstItems": result.firstItemsAfter.joined(separator: " | "),
-                "statusId": selectedCategory.statusId.map(String.init) ?? "-",
-                "categoryId": "-"
+                "statusId": category.statusId.map(String.init) ?? "-",
+                "categoryId": "-",
+                "canLoadMore": canLoadMore ? "true" : "false"
             ])
         } catch {
-            releases = []
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .home, message: reset ? "Home feed request cancelled" : "Home next page load cancelled", metadata: [
+                    "category": category.title,
+                    "page": "\(page)"
+                ])
+                return
+            }
+            if !hadVisibleData {
+                releases = []
+            }
             output = DebugResultFormatter.error(error)
-            appState.diagnosticsLogger.log(level: .error, category: .home, message: "Home feed request failed", metadata: [
-                "category": selectedCategory.title,
-                "endpoint": "filter/0",
-                "error": output
+            appState.diagnosticsLogger.log(level: .error, category: .home, message: reset ? "Home feed request failed" : "Home next page load failed", metadata: [
+                "category": category.title,
+                "endpoint": "filter/\(page)",
+                "page": "\(page)",
+                "error": output,
+                "keptVisibleData": hadVisibleData ? "true" : "false"
             ])
         }
     }

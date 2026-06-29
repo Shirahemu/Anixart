@@ -37,6 +37,7 @@ struct CommentComposerView: View {
                     TextField("Комментарий", text: $text, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...5)
+                        .submitLabel(.done)
                         .padding(10)
                         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
 

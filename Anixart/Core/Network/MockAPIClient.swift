@@ -56,7 +56,9 @@ final class MockAPIClient: APIClientProtocol {
             }
             """
         case "profile.get":
-            json = """
+            let requestedId = endpoint.pathParameters["id"] ?? "42"
+            let isMine = requestedId == "42"
+            json = isMine ? """
             {
               "is_my_profile": true,
               "profile": {
@@ -65,7 +67,7 @@ final class MockAPIClient: APIClientProtocol {
                 "avatar": "https://example.test/avatar.png",
                 "status": "Mock profile",
                 "favorite_count": 12,
-                "friend_count": 2,
+                "friend_count": 4,
                 "watching_count": 3,
                 "plan_count": 5,
                 "completed_count": 24,
@@ -73,6 +75,11 @@ final class MockAPIClient: APIClientProtocol {
                 "dropped_count": 0,
                 "watched_episode_count": 120,
                 "watched_time": 3600,
+                "friends_preview": [
+                  { "id": 51, "login": "mock_friend_1", "avatar": "https://example.test/friend-1.png", "is_online": true, "is_verified": true, "friend_count": 12, "friend_status": 2 },
+                  { "id": 52, "login": "mock_friend_2", "avatar": "https://example.test/friend-2.png", "is_online": false, "is_sponsor": true, "friend_count": 8, "friend_status": 2 },
+                  { "id": 53, "login": "mock_friend_3", "avatar": "https://example.test/friend-3.png", "is_online": true, "friend_count": 5, "friend_status": 2 }
+                ],
                 "history": [
                   {
                     "id": 1001,
@@ -107,13 +114,199 @@ final class MockAPIClient: APIClientProtocol {
                     "last_view_timestamp": 1782400000
                   }
                 ],
-                "votes": [{ "id": 1002, "title_ru": "Оценка Mock", "year": "2025" }]
+                "votes": [
+                  { "id": 1002, "title_ru": "Оценка Mock", "year": "2025", "my_vote": 5, "voted_at": 1782600000 },
+                  { "id": 1005, "title_ru": "Оценка Mock 2", "year": "2024", "my_vote": 4, "voted_at": 1782500000 },
+                  { "id": 1006, "title_ru": "Оценка Mock 3", "year": "2023", "my_vote": 3, "voted_at": 1782400000 },
+                  { "id": 1007, "title_ru": "Оценка Mock 4", "year": "2022", "my_vote": 2, "voted_at": 1782300000 }
+                ]
+              }
+            }
+            """ : """
+            {
+              "is_my_profile": false,
+              "profile": {
+                "id": \(requestedId),
+                "login": "mock_profile_\(requestedId)",
+                "avatar": "https://example.test/profile-\(requestedId).png",
+                "status": "Mock public profile",
+                "friend_count": 2,
+                "comment_count": 7,
+                "video_count": 1,
+                "collection_count": 0,
+                "is_online": true,
+                "is_verified": true,
+                "friend_status": 0,
+                "friends_preview": [
+                  { "id": 61, "login": "public_friend_1", "is_online": true, "friend_count": 3 },
+                  { "id": 62, "login": "public_friend_2", "is_online": false, "friend_count": 4 }
+                ]
               }
             }
             """
         case "profile.social":
             json = """
             { "profile": { "id": 42, "login": "mock_user", "vkPage": "mock", "tgPage": "mock_channel" } }
+            """
+        case "profile.preference.my":
+            json = """
+            {
+              "code": 0,
+              "avatar": "https://example.test/avatar.png",
+              "status": "Mock profile",
+              "vkPage": "mock_vk",
+              "tgPage": "mock_channel",
+              "instPage": "",
+              "ttPage": "",
+              "discordPage": "mock#0001",
+              "isChangeAvatarBanned": false,
+              "isChangeLoginBanned": false,
+              "isLoginChanged": false,
+              "isVkBound": true,
+              "isGoogleBound": true,
+              "privacyCounts": 0,
+              "privacyStats": 1,
+              "privacySocial": 0,
+              "privacyFriendRequests": 1
+            }
+            """
+        case "profile.preference.social":
+            json = """
+            {
+              "code": 0,
+              "vkPage": "mock_vk",
+              "tgPage": "mock_channel",
+              "instPage": "",
+              "ttPage": "",
+              "discordPage": "mock#0001"
+            }
+            """
+        case "profile.preference.status.edit":
+            let status: String
+            if case .json(let body) = endpoint.body,
+               case .object(let values) = body,
+               case .string(let value)? = values["status"] {
+                status = value
+            } else {
+                status = "Mock profile"
+            }
+            json = """
+            { "code": 0, "status": "\(Self.escape(status))" }
+            """
+        case "profile.preference.status.delete":
+            json = """
+            { "code": 0, "status": "" }
+            """
+        case "profile.preference.social.edit":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.preference.privacy.counts.edit",
+             "profile.preference.privacy.stats.edit",
+             "profile.preference.privacy.social.edit",
+             "profile.preference.privacy.friendRequests.edit":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.preference.login.info":
+            json = """
+            {
+              "code": 0,
+              "login": "mock_user",
+              "avatar": "https://example.test/avatar.png",
+              "isChangeAvailable": true,
+              "lastChangeAt": 1782600000,
+              "nextChangeAvailableAt": 1785200000
+            }
+            """
+        case "profile.preference.login.change":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.preference.password.change":
+            json = """
+            { "code": 0, "token": "mock-token-after-password-change" }
+            """
+        case "profile.preference.email.change":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.preference.email.change.confirm":
+            json = """
+            { "code": 0, "emailHint": "m***@example.test" }
+            """
+        case "profile.preference.avatar.edit":
+            json = """
+            { "code": 0, "avatar": "https://example.test/avatar-updated.jpg" }
+            """
+        case "profile.preference.vk.unbind", "profile.preference.google.unbind":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.preference.vk.bind", "profile.preference.google.bind":
+            json = """
+            { "code": 0 }
+            """
+        case "profile.friend.all":
+            json = """
+            {
+              "content": [
+                { "id": 51, "login": "mock_friend_1", "avatar": "https://example.test/friend-1.png", "is_online": true, "is_verified": true, "friend_count": 12, "friend_status": 2 },
+                { "id": 52, "login": "mock_friend_2", "avatar": "https://example.test/friend-2.png", "is_online": false, "is_sponsor": true, "friend_count": 8, "friend_status": 2 },
+                { "id": 53, "login": "mock_friend_3", "avatar": "https://example.test/friend-3.png", "is_online": true, "friend_count": 5, "friend_status": 2 },
+                { "id": 54, "login": "mock_friend_4", "avatar": "https://example.test/friend-4.png", "is_online": false, "friend_count": 2, "friend_status": 2 }
+              ],
+              "currentPage": 0,
+              "totalCount": 4,
+              "totalPageCount": 1
+            }
+            """
+        case "profile.friend.recommendations":
+            json = """
+            {
+              "content": [
+                { "id": 71, "login": "mock_recommend_1", "avatar": "https://example.test/recommend-1.png", "is_online": true, "friend_count": 19 },
+                { "id": 72, "login": "mock_recommend_2", "avatar": "https://example.test/recommend-2.png", "is_online": false, "is_verified": true, "friend_count": 6 }
+              ],
+              "currentPage": 0,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "profile.friend.requests.in", "profile.friend.requests.in.last":
+            json = """
+            {
+              "content": [
+                { "id": 81, "login": "mock_incoming_1", "avatar": "https://example.test/incoming-1.png", "is_online": true, "friend_count": 11, "friend_status": 1 },
+                { "id": 82, "login": "mock_incoming_2", "avatar": "https://example.test/incoming-2.png", "is_online": false, "friend_count": 1, "friend_status": 1 }
+              ],
+              "currentPage": 0,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "profile.friend.requests.out", "profile.friend.requests.out.last":
+            json = """
+            {
+              "content": [
+                { "id": 91, "login": "mock_outgoing_1", "avatar": "https://example.test/outgoing-1.png", "is_online": false, "friend_count": 4, "friend_status": 0 }
+              ],
+              "currentPage": 0,
+              "totalCount": 1,
+              "totalPageCount": 1
+            }
+            """
+        case "profile.friend.request.send":
+            json = """
+            { "code": 3 }
+            """
+        case "profile.friend.request.remove":
+            json = """
+            { "code": 2 }
+            """
+        case "profile.friend.request.hide":
+            json = """
+            { "code": 0 }
             """
         case "release.get", "release.random":
             json = """
@@ -135,10 +328,11 @@ final class MockAPIClient: APIClientProtocol {
                 "my_vote": 4,
                 "your_vote": 4,
                 "voted_at": 1782600000,
-                "episodes_total": 12,
-                "episodes_released": 6,
+                "episodes_total": 30,
+                "episodes_released": 30,
                 "favorite_count": 10,
-                "comment_count": 2,
+                "comments_count": 2,
+                "last_view_episode": { "id": 12, "name": "Episode 12", "position": 12, "source_id": 1 },
                 "comments": [
                   {
                     "id": 9001,
@@ -159,6 +353,14 @@ final class MockAPIClient: APIClientProtocol {
                     "is_spoiler": true,
                     "profile": { "id": 43, "login": "spoiler_user" }
                   }
+                ],
+                "related_count": 5,
+                "related_releases": [
+                  { "id": 2001, "title_ru": "Связанный Mock 1", "year": "2024", "profile_list_status": 1 },
+                  { "id": 2002, "title_ru": "Связанный Mock 2", "year": "2023", "profile_list_status": 2 },
+                  { "id": 2003, "title_ru": "Связанный Mock 3", "year": "2022", "profile_list_status": 3 },
+                  { "id": 2004, "title_ru": "Связанный Mock 4", "year": "2021", "profile_list_status": 4 },
+                  { "id": 2005, "title_ru": "Связанный Mock 5", "year": "2020", "profile_list_status": 5 }
                 ],
                 "status": { "id": 2, "name": "Выходит" },
                 "country": "Япония",
@@ -318,16 +520,19 @@ final class MockAPIClient: APIClientProtocol {
             """
         case "episode.types":
             json = """
-            { "types": [{ "id": 1, "name": "TV", "episodesCount": 12 }] }
+            { "types": [{ "id": 1, "name": "TV", "episodesCount": 30 }] }
             """
         case "episode.sources":
             json = """
-            { "sources": [{ "id": 1, "name": "Mock source", "episodesCount": 12, "type": { "id": 1, "name": "TV" } }] }
+            { "sources": [{ "id": 1, "name": "Mock source", "episodesCount": 30, "type": { "id": 1, "name": "TV" } }] }
             """
         case "episode.list":
-            json = """
-            { "episodes": [{ "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/player/episode-1", "releaseId": 1001, "sourceId": 1, "iframe": true }] }
-            """
+            let episodes = (1...30).map { position in
+                """
+                { "id": \(position), "name": "Episode \(position)", "position": \(position), "url": "https://example.test/player/episode-\(position)", "releaseId": 1001, "sourceId": 1, "iframe": true, "is_watched": \(position <= 12 ? "true" : "false") }
+                """
+            }.joined(separator: ",")
+            json = "{ \"episodes\": [\(episodes)] }"
         case "episode.target":
             json = """
             { "episode": { "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/player/episode-1", "iframe": true } }
@@ -344,7 +549,7 @@ final class MockAPIClient: APIClientProtocol {
             json = """
             { "content": [{ "id": 42, "login": "mock_user" }], "currentPage": 0, "totalCount": 1, "totalPageCount": 1 }
             """
-        case "profile.list.all":
+        case "favorite.all", "profile.list.all":
             json = """
             {
               "content": [
@@ -353,11 +558,36 @@ final class MockAPIClient: APIClientProtocol {
                   "title_ru": "Mock Listed Release",
                   "description": "Local profile-list response.",
                   "year": "2026",
-                  "episodes_released": 6
+                  "episodes_released": 6,
+                  "profile_list_status": 1,
+                  "profile_list_added_at": 1782600000
+                },
+                {
+                  "id": 1008,
+                  "title_ru": "Mock Listed Release Older",
+                  "description": "Local profile-list response.",
+                  "year": "2025",
+                  "episodes_released": 4,
+                  "profile_list_status": 2,
+                  "profile_list_added_at": 1782500000
                 }
               ],
               "currentPage": 0,
-              "totalCount": 1,
+              "totalCount": 2,
+              "totalPageCount": 1
+            }
+            """
+        case "profile.vote.release.voted":
+            json = """
+            {
+              "content": [
+                { "id": 1002, "title_ru": "Оценка Mock", "year": "2025", "my_vote": 5, "voted_at": 1782600000 },
+                { "id": 1005, "title_ru": "Оценка Mock 2", "year": "2024", "my_vote": 4, "voted_at": 1782500000 },
+                { "id": 1006, "title_ru": "Оценка Mock 3", "year": "2023", "my_vote": 3, "voted_at": 1782400000 },
+                { "id": 1007, "title_ru": "Оценка Mock 4", "year": "2022", "my_vote": 2, "voted_at": 1782300000 }
+              ],
+              "currentPage": 0,
+              "totalCount": 4,
               "totalPageCount": 1
             }
             """
@@ -366,6 +596,13 @@ final class MockAPIClient: APIClientProtocol {
         }
 
         return Data(json.utf8)
+    }
+
+    private static func escape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     private func emit(endpoint: APIEndpoint, start: Date, data: Data, message: String) async {

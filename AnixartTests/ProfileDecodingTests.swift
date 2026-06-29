@@ -58,6 +58,127 @@ final class ProfileDecodingTests: XCTestCase {
         XCTAssertEqual(response.profile?.friendsPreview?.count, 1)
     }
 
+    func testFriendFieldsDecodeSnakeCaseAndCamelCase() throws {
+        let snake = try SnakeCaseDecodingTests.decoder.decode(Profile.self, from: Data("""
+        {
+          "id": 10,
+          "friend_status": 2,
+          "is_blocked": true,
+          "is_me_blocked": false,
+          "is_friend_requests_disallowed": true,
+          "friends_preview": [{ "id": 11, "login": "SnakeFriend" }]
+        }
+        """.utf8))
+        XCTAssertEqual(snake.friendStatus, 2)
+        XCTAssertEqual(snake.isBlocked, true)
+        XCTAssertEqual(snake.isMeBlocked, false)
+        XCTAssertEqual(snake.isFriendRequestsDisallowed, true)
+        XCTAssertEqual(snake.friendsPreview?.first?.login, "SnakeFriend")
+
+        let camel = try JSONDecoder().decode(Profile.self, from: Data("""
+        {
+          "id": 10,
+          "friendStatus": 1,
+          "isBlocked": false,
+          "isMeBlocked": true,
+          "isFriendRequestsDisallowed": false,
+          "friendsPreview": [{ "id": 12, "login": "CamelFriend" }]
+        }
+        """.utf8))
+        XCTAssertEqual(camel.friendStatus, 1)
+        XCTAssertEqual(camel.isBlocked, false)
+        XCTAssertEqual(camel.isMeBlocked, true)
+        XCTAssertEqual(camel.isFriendRequestsDisallowed, false)
+        XCTAssertEqual(camel.friendsPreview?.first?.login, "CamelFriend")
+    }
+
+    func testFriendActionResponsesDecodeCodeOnly() throws {
+        let data = Data(#"{ "code": 3 }"#.utf8)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(SendFriendRequestResponse.self, from: data).code, 3)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(RemoveFriendRequestResponse.self, from: data).code, 3)
+    }
+
+    func testProfileFriendActionStateMappingMatchesAndroid() {
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 10, targetProfileId: 20, friendStatus: nil), .none)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 10, targetProfileId: 20, friendStatus: 2), .friends)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 10, targetProfileId: 20, friendStatus: 0), .requestSent)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 10, targetProfileId: 20, friendStatus: 1), .requestIncoming)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 20, targetProfileId: 10, friendStatus: 1), .requestSent)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 20, targetProfileId: 10, friendStatus: 0), .requestIncoming)
+        XCTAssertEqual(ProfileFriendActionState.resolve(currentProfileId: 10, targetProfileId: 20, friendStatus: 99), .unknown(99))
+    }
+
+    func testProfilePreferenceResponseDecodesSnakeCase() throws {
+        let response = try SnakeCaseDecodingTests.decoder.decode(ProfilePreferenceResponse.self, from: Data("""
+        {
+          "code": 0,
+          "avatar": "https://example.test/avatar.jpg",
+          "status": "hello",
+          "vk_page": "vk",
+          "tg_page": "tg",
+          "inst_page": "inst",
+          "tt_page": "tt",
+          "discord_page": "discord",
+          "is_change_avatar_banned": false,
+          "ban_change_avatar_expires": 1782600000,
+          "is_change_login_banned": true,
+          "ban_change_login_expires": 1785200000,
+          "is_login_changed": true,
+          "is_vk_bound": true,
+          "is_google_bound": false,
+          "privacy_counts": 0,
+          "privacy_stats": 1,
+          "privacy_social": 2,
+          "privacy_friend_requests": 1
+        }
+        """.utf8))
+
+        XCTAssertEqual(response.code, 0)
+        XCTAssertEqual(response.vkPage, "vk")
+        XCTAssertEqual(response.tgPage, "tg")
+        XCTAssertEqual(response.isChangeLoginBanned, true)
+        XCTAssertEqual(response.isVkBound, true)
+        XCTAssertEqual(response.privacySocial, 2)
+    }
+
+    func testProfilePreferenceCodeOnlyResponseDecodes() throws {
+        let data = Data(#"{ "code": 0 }"#.utf8)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(ProfilePreferenceResponse.self, from: data).code, 0)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(ProfileSocialPreferenceResponse.self, from: data).code, 0)
+        XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(ChangeLoginInfoResponse.self, from: data).code, 0)
+    }
+
+    func testProfilePreferenceSecurityResponsesDecodeSnakeCase() throws {
+        let login = try SnakeCaseDecodingTests.decoder.decode(ChangeLoginInfoResponse.self, from: Data("""
+        {
+          "code": 0,
+          "login": "mock",
+          "avatar": "https://example.test/avatar.jpg",
+          "is_change_available": false,
+          "last_change_at": 1782600000,
+          "next_change_available_at": 1785200000
+        }
+        """.utf8))
+        XCTAssertEqual(login.login, "mock")
+        XCTAssertEqual(login.isChangeAvailable, false)
+        XCTAssertEqual(login.nextChangeAvailableAt, 1785200000)
+
+        let password = try SnakeCaseDecodingTests.decoder.decode(ChangePasswordResponse.self, from: Data(#"{ "code": 0, "token": "new-token" }"#.utf8))
+        XCTAssertEqual(password.token, "new-token")
+
+        let confirm = try SnakeCaseDecodingTests.decoder.decode(ChangeEmailConfirmResponse.self, from: Data(#"{ "code": 0, "email_hint": "m***@example.test" }"#.utf8))
+        XCTAssertEqual(confirm.emailHint, "m***@example.test")
+    }
+
+    func testProfilePreferenceMessagesMapKnownCodes() {
+        XCTAssertEqual(ProfilePreferenceMessages.login(3), "Этот логин уже занят")
+        XCTAssertEqual(ProfilePreferenceMessages.password(3), "Текущий пароль указан неверно")
+        XCTAssertEqual(ProfilePreferenceMessages.emailChange(4), "Этот email уже занят")
+        XCTAssertEqual(ProfilePreferenceMessages.social(6), "Некорректная ссылка Discord")
+        XCTAssertEqual(ProfilePreferenceMessages.vkUnbind(2), "VK не был привязан")
+        XCTAssertEqual(ProfilePreferenceMessages.googleBind(3), "Google уже привязан")
+    }
+
     private static let sampleFull = """
     {
       "code": 0,

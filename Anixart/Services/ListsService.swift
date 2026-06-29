@@ -56,11 +56,15 @@ enum ProfileListTab: Hashable, CaseIterable, Identifiable {
         }
     }
 
+    var newestFirstSort: Int {
+        1
+    }
+
     func endpoint(page: Int) -> APIEndpoint {
         if self == .favorites {
-            return .favoriteAll(page: page)
+            return .favoriteAll(page: page, sort: newestFirstSort)
         }
-        return .profileListAll(status: status?.rawValue ?? 0, page: page)
+        return .profileListAll(status: status?.rawValue ?? 0, page: page, sort: newestFirstSort)
     }
 }
 
@@ -86,5 +90,9 @@ enum ProfileListStatus: Int, CaseIterable, Hashable, Identifiable {
         case .dropped:
             "Брошено"
         }
+    }
+
+    var visibleOverlayTitle: String? {
+        title
     }
 }

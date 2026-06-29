@@ -1,6 +1,10 @@
 import Foundation
 
-final class DirectLinkService {
+protocol DirectLinkProviding {
+    func links(url: String) async throws -> DirectLinksResponse
+}
+
+final class DirectLinkService: DirectLinkProviding {
     private let apiClient: APIClientProtocol
 
     init(apiClient: APIClientProtocol) {

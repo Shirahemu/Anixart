@@ -106,6 +106,26 @@ final class ReleaseDecodingTests: XCTestCase {
         XCTAssertEqual(try SnakeCaseDecodingTests.decoder.decode(DeleteVoteReleaseResponse.self, from: data).code, 0)
     }
 
+    func testReleaseResolvedCommentCountToleratesKnownVariants() throws {
+        let variants = [
+            (#"{ "id": 1, "comment_count": 11 }"#, Int64(11)),
+            (#"{ "id": 1, "comments_count": 12 }"#, Int64(12)),
+            (#"{ "id": 1, "commentCount": 13 }"#, Int64(13)),
+            (#"{ "id": 1, "commentsCount": 14 }"#, Int64(14)),
+            (#"{ "id": 1, "comments": [{ "id": 99, "message": "preview" }] }"#, Int64(1))
+        ]
+
+        for (json, expected) in variants {
+            let release = try SnakeCaseDecodingTests.decoder.decode(Release.self, from: Data(json.utf8))
+            XCTAssertEqual(release.resolvedCommentCount, expected)
+        }
+    }
+
+    func testPersonalStatusTitleMapping() throws {
+        let release = try SnakeCaseDecodingTests.decoder.decode(Release.self, from: Data(#"{ "id": 1, "profile_list_status": 3 }"#.utf8))
+        XCTAssertEqual(release.personalStatusTitle, "Просмотрено")
+    }
+
     private static let sampleDetailed = """
     {
       "code": 0,

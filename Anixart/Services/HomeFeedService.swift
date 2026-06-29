@@ -7,12 +7,12 @@ final class HomeFeedService {
         self.filterService = FilterService(apiClient: apiClient)
     }
 
-    func releases(for category: HomeCategory) async throws -> [Release] {
-        try await feed(for: category).releases
+    func releases(for category: HomeCategory, page: Int = 0) async throws -> [Release] {
+        try await feed(for: category, page: page).releases
     }
 
-    func feed(for category: HomeCategory) async throws -> HomeFeedResult {
-        let response = try await filterService.filter(page: 0, body: category.filterBody)
+    func feed(for category: HomeCategory, page: Int = 0) async throws -> HomeFeedResult {
+        let response = try await filterService.filter(page: page, body: category.filterBody)
         let raw = response.content ?? []
         let processed = category == .latest ? Self.processLatest(raw) : raw
         return HomeFeedResult(
@@ -62,6 +62,29 @@ struct HomeFeedResult {
     let hasEpisodeLastUpdateCount: Int
     let firstItemsBefore: [String]
     let firstItemsAfter: [String]
+}
+
+struct HomeFeedMergeResult {
+    let releases: [Release]
+    let insertedCount: Int
+}
+
+enum HomeFeedPagination {
+    static func appendUnique(existing: [Release], incoming: [Release]) -> HomeFeedMergeResult {
+        var seenIDs = Set(existing.compactMap(\.id))
+        var merged = existing
+        var insertedCount = 0
+
+        for release in incoming {
+            if let id = release.id {
+                guard seenIDs.insert(id).inserted else { continue }
+            }
+            merged.append(release)
+            insertedCount += 1
+        }
+
+        return HomeFeedMergeResult(releases: merged, insertedCount: insertedCount)
+    }
 }
 
 enum HomeCategory: String, CaseIterable, Identifiable {

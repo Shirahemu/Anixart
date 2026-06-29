@@ -1,5 +1,11 @@
 import Foundation
 
+struct DirectLinkQualityOption: Equatable {
+    let label: String
+    let urlString: String
+    let priority: Int
+}
+
 struct DirectLinksResponse: Codable, Equatable {
     let code: Int?
     let `default`: String?
@@ -21,12 +27,12 @@ struct DirectLinksResponse: Codable, Equatable {
         topLevelKeys: [String] = []
     ) {
         self.code = code
-        self.default = `default`
-        self.q360p = q360p
-        self.q480p = q480p
-        self.q720p = q720p
-        self.q1080p = q1080p
-        self.additionalLinks = additionalLinks
+        self.default = Self.normalizedURLString(`default` ?? "")
+        self.q360p = Self.normalizedURLString(q360p ?? "")
+        self.q480p = Self.normalizedURLString(q480p ?? "")
+        self.q720p = Self.normalizedURLString(q720p ?? "")
+        self.q1080p = Self.normalizedURLString(q1080p ?? "")
+        self.additionalLinks = additionalLinks.compactMapValues(Self.normalizedURLString)
         self.topLevelKeys = topLevelKeys
     }
 
@@ -35,7 +41,7 @@ struct DirectLinksResponse: Codable, Equatable {
         let flattened = Self.flattenURLStrings(root)
 
         self.code = Self.rootCode(root)
-        self.default = Self.firstValue(for: ["default", "url", "link", "src"], in: flattened)
+        self.default = Self.defaultValue(in: flattened)
         self.q360p = Self.firstValue(for: ["q360p", "360", "360p", "quality360", "quality_360"], in: flattened)
         self.q480p = Self.firstValue(for: ["q480p", "480", "480p", "quality480", "quality_480"], in: flattened)
         self.q720p = Self.firstValue(for: ["q720p", "720", "720p", "quality720", "quality_720"], in: flattened)
@@ -61,11 +67,30 @@ struct DirectLinksResponse: Codable, Equatable {
     }
 
     var bestURLString: String? {
-        let priority = [q1080p, q720p, q480p, q360p, `default`]
-        if let selected = priority.compactMap({ $0 }).first(where: Self.isHTTPURLString) {
-            return selected
+        if let selected = qualityURLStrings.max(by: { $0.priority < $1.priority }) {
+            return selected.urlString
         }
         return additionalLinks.values.first(where: Self.isHTTPURLString)
+    }
+
+    var qualityURLStrings: [DirectLinkQualityOption] {
+        let candidates = [
+            DirectLinkQualityOption(label: "360p", urlString: q360p ?? "", priority: 360),
+            DirectLinkQualityOption(label: "480p", urlString: q480p ?? "", priority: 480),
+            DirectLinkQualityOption(label: "720p", urlString: q720p ?? "", priority: 720),
+            DirectLinkQualityOption(label: "1080p", urlString: q1080p ?? "", priority: 1080),
+            DirectLinkQualityOption(label: "Default", urlString: `default` ?? "", priority: 0)
+        ]
+
+        var seen: Set<String> = []
+        return candidates.compactMap { candidate in
+            guard Self.isHTTPURLString(candidate.urlString),
+                  seen.insert(candidate.urlString).inserted
+            else {
+                return nil
+            }
+            return candidate
+        }
     }
 
     var allURLStrings: [String] {
@@ -81,9 +106,7 @@ struct DirectLinksResponse: Codable, Equatable {
                 return exact
             }
             if let fuzzy = values.first(where: { item in
-                let normalizedKey = normalizeKey(item.key)
-                let normalizedLastPath = normalizeKey(item.key.split(separator: ".").last.map(String.init) ?? item.key)
-                return (normalizedKey == normalizeKey(key) || normalizedLastPath == normalizeKey(key)) && isHTTPURLString(item.value)
+                keyPath(item.key, matchesAnyOf: [key]) && isHTTPURLString(item.value)
             })?.value {
                 return fuzzy
             }
@@ -91,11 +114,24 @@ struct DirectLinksResponse: Codable, Equatable {
         return nil
     }
 
+    private static func defaultValue(in values: [String: String]) -> String? {
+        for key in ["default", "url", "link", "src"] {
+            if let exact = values[key], isHTTPURLString(exact) {
+                return exact
+            }
+        }
+        return values.first { item in
+            keyPath(item.key, matchesAnyOf: ["default", "url", "link", "src"])
+                && !keyPath(item.key, matchesAnyOf: ["360", "360p", "480", "480p", "720", "720p", "1080", "1080p"])
+                && isHTTPURLString(item.value)
+        }?.value
+    }
+
     private static func flattenURLStrings(_ value: JSONValue, path: String = "") -> [String: String] {
         switch value {
         case .string(let string):
-            guard isHTTPURLString(string) else { return [:] }
-            return [path.isEmpty ? "url" : path: string]
+            guard let normalized = normalizedURLString(string) else { return [:] }
+            return [path.isEmpty ? "url" : path: normalized]
         case .object(let object):
             return object.reduce(into: [:]) { result, item in
                 let childPath = path.isEmpty ? item.key : "\(path).\(item.key)"
@@ -116,6 +152,16 @@ struct DirectLinksResponse: Codable, Equatable {
         return scheme == "http" || scheme == "https"
     }
 
+    private static func normalizedURLString(_ value: String) -> String? {
+        var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if candidate.hasPrefix("//") {
+            candidate = "https:\(candidate)"
+        }
+        candidate = candidate.replacingOccurrences(of: ":hls:hls.m3u8", with: ":hls:manifest.m3u8")
+        guard isHTTPURLString(candidate) else { return nil }
+        return candidate
+    }
+
     private static func rootCode(_ value: JSONValue) -> Int? {
         guard case .object(let object) = value, let code = object["code"] else { return nil }
         switch code {
@@ -133,5 +179,16 @@ struct DirectLinksResponse: Codable, Equatable {
             .replacingOccurrences(of: "_", with: "")
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: ".", with: "")
+    }
+
+    private static func keyPath(_ path: String, matchesAnyOf aliases: [String]) -> Bool {
+        let normalizedAliases = Set(aliases.map(normalizeKey))
+        if normalizedAliases.contains(normalizeKey(path)) {
+            return true
+        }
+        return path
+            .split(separator: ".")
+            .map { normalizeKey(String($0)) }
+            .contains { normalizedAliases.contains($0) }
     }
 }

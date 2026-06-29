@@ -10,6 +10,7 @@ final class ProfileHistoryViewModel: ObservableObject {
     @Published var deleteErrorMessage: String?
 
     private let service: HistoryService
+    private let dataCache: AppDataCache?
     private weak var diagnosticsLogger: DiagnosticsLogger?
     private var currentPage = -1
     private var totalPageCount: Int?
@@ -17,14 +18,23 @@ final class ProfileHistoryViewModel: ObservableObject {
     private var loadedIDs = Set<Int64>()
     private var didLoad = false
 
-    init(service: HistoryService, diagnosticsLogger: DiagnosticsLogger?) {
+    init(service: HistoryService, dataCache: AppDataCache? = nil, diagnosticsLogger: DiagnosticsLogger?) {
         self.service = service
+        self.dataCache = dataCache
         self.diagnosticsLogger = diagnosticsLogger
     }
 
     func loadInitial() async {
         guard !didLoad else { return }
         didLoad = true
+        if let cached = dataCache?.historyFirstPage, !cached.isEmpty {
+            releases = cached
+            loadedIDs = Set(cached.compactMap(\.id))
+            currentPage = 0
+            log(.debug, "History cache hit", ["count": "\(cached.count)"])
+        } else {
+            log(.debug, "History cache miss")
+        }
         await loadPage(0, reset: true)
     }
 
@@ -57,6 +67,10 @@ final class ProfileHistoryViewModel: ObservableObject {
             loadedIDs.remove(releaseId)
             log(.info, "History delete succeeded", ["releaseId": "\(releaseId)", "code": response.code.map(String.init) ?? "-"])
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "History delete cancelled", ["releaseId": "\(releaseId)"])
+                return
+            }
             deleteErrorMessage = "Не удалось удалить тайтл из истории."
             log(.error, "History delete failed", ["releaseId": "\(releaseId)", "error": Redactor.redact(error.localizedDescription)])
         }
@@ -101,6 +115,7 @@ final class ProfileHistoryViewModel: ObservableObject {
             let unique = uniqueReleases(from: loaded)
             if reset {
                 releases = unique
+                dataCache?.storeHistoryFirstPage(unique)
             } else {
                 releases.append(contentsOf: unique)
             }
@@ -115,6 +130,10 @@ final class ProfileHistoryViewModel: ObservableObject {
                 "totalPageCount": totalPageCount.map(String.init) ?? "-"
             ])
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, failureMessage.replacingOccurrences(of: "failed", with: "cancelled"), ["page": "\(page)"])
+                return
+            }
             errorMessage = Redactor.redact(error.localizedDescription)
             log(.error, failureMessage, ["page": "\(page)", "error": errorMessage ?? "-"])
         }

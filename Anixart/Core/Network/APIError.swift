@@ -33,4 +33,15 @@ enum APIError: Error, LocalizedError, Equatable {
             "Multipart upload endpoints are declared but not implemented in Stage 1."
         }
     }
+
+    var isCancellation: Bool {
+        if case .transport(let message) = self {
+            let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return normalized == "cancelled"
+                || normalized == "canceled"
+                || normalized == "the request was cancelled."
+                || normalized == "the request was canceled."
+        }
+        return false
+    }
 }

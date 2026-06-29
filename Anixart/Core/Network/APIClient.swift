@@ -90,9 +90,24 @@ final class APIClient: APIClientProtocol {
             }
         } catch let error as APIError {
             await emitDebug(endpoint: endpoint, statusCode: statusCode, start: start, message: error.localizedDescription, data: responseBody)
+            if error.isUserInvisibleCancellation {
+                await diagnosticsLogger?.log(level: .debug, category: .network, message: "Request cancelled", metadata: [
+                    "endpoint": endpoint.name,
+                    "path": endpoint.resolvedPath
+                ], requestId: requestId)
+                throw error
+            }
             await logFailure(endpoint: endpoint, error: error, statusCode: statusCode, start: start, data: responseBody, requestId: requestId, diagnostics: requestDiagnostics)
             throw error
         } catch {
+            if error.isUserInvisibleCancellation {
+                await emitDebug(endpoint: endpoint, statusCode: statusCode, start: start, message: "cancelled", data: responseBody)
+                await diagnosticsLogger?.log(level: .debug, category: .network, message: "Request cancelled", metadata: [
+                    "endpoint": endpoint.name,
+                    "path": endpoint.resolvedPath
+                ], requestId: requestId)
+                throw error
+            }
             let apiError = APIError.transport(error.localizedDescription)
             await emitDebug(endpoint: endpoint, statusCode: statusCode, start: start, message: apiError.localizedDescription, data: responseBody)
             await logFailure(endpoint: endpoint, error: apiError, statusCode: statusCode, start: start, data: responseBody, requestId: requestId, diagnostics: requestDiagnostics)
@@ -152,8 +167,10 @@ final class APIClient: APIClientProtocol {
             } catch {
                 throw APIError.encoding(error.localizedDescription)
             }
-        case .multipartPlaceholder:
-            throw APIError.multipartNotImplemented
+        case .multipart(let body):
+            let boundary = "AnixartBoundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.httpBody = multipartEncoded(body, boundary: boundary)
         }
 
         SafeLogger.logRequest(endpoint: endpoint, url: finalURL, headers: request.allHTTPHeaderFields ?? [:])
@@ -180,6 +197,28 @@ final class APIClient: APIClientProtocol {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&+=?")
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
+    private func multipartEncoded(_ body: MultipartBody, boundary: String) -> Data {
+        var data = Data()
+        let lineBreak = "\r\n"
+
+        for (key, value) in body.fields.sorted(by: { $0.key < $1.key }) {
+            data.append("--\(boundary)\(lineBreak)")
+            data.append("Content-Disposition: form-data; name=\"\(key)\"\(lineBreak)\(lineBreak)")
+            data.append("\(value)\(lineBreak)")
+        }
+
+        for file in body.files {
+            data.append("--\(boundary)\(lineBreak)")
+            data.append("Content-Disposition: form-data; name=\"\(file.fieldName)\"; filename=\"\(file.fileName)\"\(lineBreak)")
+            data.append("Content-Type: \(file.mimeType)\(lineBreak)\(lineBreak)")
+            data.append(file.data)
+            data.append(lineBreak)
+        }
+
+        data.append("--\(boundary)--\(lineBreak)")
+        return data
     }
 
     private func emitDebug(endpoint: APIEndpoint, statusCode: Int?, start: Date, message: String, data: Data) async {
@@ -284,4 +323,10 @@ private struct RequestDiagnostics {
     let headerProfile: String
     let timeout: TimeInterval
     let redactedHeaders: [String: String]
+}
+
+private extension Data {
+    mutating func append(_ string: String) {
+        append(Data(string.utf8))
+    }
 }

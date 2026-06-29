@@ -23,6 +23,36 @@ final class HomeFeedServiceTests: XCTestCase {
 
         XCTAssertEqual(processed.map(\.id), [3, 2])
     }
+
+    func testHomePaginationAppendsOnlyNewReleaseIDs() {
+        let existing = [
+            Release.testRelease(id: 1, title: "First", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil),
+            Release.testRelease(id: 2, title: "Second", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil)
+        ]
+        let incoming = [
+            Release.testRelease(id: 2, title: "Second duplicate", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil),
+            Release.testRelease(id: 3, title: "Third", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil)
+        ]
+
+        let result = HomeFeedPagination.appendUnique(existing: existing, incoming: incoming)
+
+        XCTAssertEqual(result.releases.map(\.id), [1, 2, 3])
+        XCTAssertEqual(result.insertedCount, 1)
+    }
+
+    func testHomePaginationStopsOnDuplicateOnlyPage() {
+        let existing = [
+            Release.testRelease(id: 1, title: "First", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil)
+        ]
+        let incoming = [
+            Release.testRelease(id: 1, title: "First duplicate", year: nil, lastUpdateDate: nil, episodeLastUpdate: nil)
+        ]
+
+        let result = HomeFeedPagination.appendUnique(existing: existing, incoming: incoming)
+
+        XCTAssertEqual(result.releases.map(\.id), [1])
+        XCTAssertEqual(result.insertedCount, 0)
+    }
 }
 
 private extension Release {

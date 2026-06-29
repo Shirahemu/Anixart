@@ -33,15 +33,9 @@ struct ReleaseCommentsView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Комментарии")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            Button {
-                Task { await viewModel.reload() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .disabled(viewModel.isLoading)
-            .accessibilityLabel("Обновить")
-        }
+        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
+        .keyboardDoneToolbar()
         .safeAreaInset(edge: .bottom) {
             CommentComposerView(
                 text: $viewModel.composerText,

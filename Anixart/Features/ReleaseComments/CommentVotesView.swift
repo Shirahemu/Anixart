@@ -55,14 +55,6 @@ struct CommentVotesView: View {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        Task { await reload() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
-                }
             }
             .task {
                 await loadIfNeeded()

@@ -13,6 +13,69 @@ struct HistoryResponse: Codable, Equatable {
     let code: Int?
 }
 
+struct SendFriendRequestResponse: Codable, Equatable {
+    let code: Int?
+
+    var resultCode: SendFriendRequestCode? {
+        code.flatMap(SendFriendRequestCode.init(rawValue:))
+    }
+
+    var userMessage: String {
+        switch resultCode {
+        case .requestConfirmed:
+            return "Заявка принята"
+        case .requestSent:
+            return "Заявка отправлена"
+        case .profileWasBlocked:
+            return "Профиль заблокирован"
+        case .myProfileWasBlocked:
+            return "Пользователь заблокировал вас"
+        case .friendLimitReached:
+            return "Достигнут лимит друзей"
+        case .targetFriendLimitReached:
+            return "У пользователя достигнут лимит друзей"
+        case .targetFriendRequestsDisallowed:
+            return "Пользователь запретил заявки в друзья"
+        case .none:
+            return "Не удалось выполнить действие"
+        }
+    }
+}
+
+struct RemoveFriendRequestResponse: Codable, Equatable {
+    let code: Int?
+
+    var resultCode: RemoveFriendRequestCode? {
+        code.flatMap(RemoveFriendRequestCode.init(rawValue:))
+    }
+
+    var userMessage: String {
+        switch resultCode {
+        case .requestRemoved:
+            return "Заявка отменена"
+        case .friendshipRemoved:
+            return "Пользователь удалён из друзей"
+        case .none:
+            return "Не удалось выполнить действие"
+        }
+    }
+}
+
+enum SendFriendRequestCode: Int {
+    case requestConfirmed = 2
+    case requestSent = 3
+    case profileWasBlocked = 4
+    case myProfileWasBlocked = 5
+    case friendLimitReached = 6
+    case targetFriendLimitReached = 7
+    case targetFriendRequestsDisallowed = 8
+}
+
+enum RemoveFriendRequestCode: Int {
+    case requestRemoved = 2
+    case friendshipRemoved = 3
+}
+
 struct PageableResponse<T: Codable & Equatable>: Codable, Equatable {
     let content: [T]?
     let currentPage: Int?

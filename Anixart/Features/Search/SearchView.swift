@@ -46,6 +46,9 @@ struct SearchView: View {
             .padding()
         }
         .navigationTitle("Поиск")
+        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
+        .keyboardDoneToolbar()
     }
 
     private func search() async {
@@ -65,6 +68,9 @@ struct SearchView: View {
             releases = response.releases ?? []
             output = releases.isEmpty ? "По запросу «\(trimmed)» релизы не декодированы." : ""
         } catch {
+            if error.isUserInvisibleCancellation {
+                return
+            }
             releases = []
             output = DebugResultFormatter.error(error)
         }

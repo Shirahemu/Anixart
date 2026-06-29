@@ -32,6 +32,9 @@ struct LoginView: View {
             }
         }
         .navigationTitle("Anixart PORT")
+        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
+        .keyboardDoneToolbar()
         .onAppear {
             appState.refreshTokenStatus()
         }
@@ -47,6 +50,9 @@ struct LoginView: View {
             appState.completeSignIn(with: response)
             output = "Вход выполнен: \(response.profile?.login ?? response.data?.profile?.login ?? "профиль")."
         } catch {
+            if error.isUserInvisibleCancellation {
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.refreshTokenStatus()
         }

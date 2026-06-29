@@ -3,8 +3,8 @@ import SwiftUI
 struct ProfileHistoryView: View {
     @StateObject private var viewModel: ProfileHistoryViewModel
 
-    init(service: HistoryService, diagnosticsLogger: DiagnosticsLogger?) {
-        _viewModel = StateObject(wrappedValue: ProfileHistoryViewModel(service: service, diagnosticsLogger: diagnosticsLogger))
+    init(service: HistoryService, dataCache: AppDataCache? = nil, diagnosticsLogger: DiagnosticsLogger?) {
+        _viewModel = StateObject(wrappedValue: ProfileHistoryViewModel(service: service, dataCache: dataCache, diagnosticsLogger: diagnosticsLogger))
     }
 
     var body: some View {
@@ -66,15 +66,6 @@ struct ProfileHistoryView: View {
             }
         }
         .navigationTitle("История просмотров")
-        .toolbar {
-            Button {
-                Task { await viewModel.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .disabled(viewModel.isLoading)
-            .accessibilityLabel("Обновить")
-        }
         .task {
             await viewModel.loadInitial()
         }

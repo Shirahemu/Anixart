@@ -18,7 +18,7 @@ struct ListsView: View {
 
                 if !appState.hasToken && !appState.config.isMockMode {
                     ContentUnavailableView("Нужен вход", systemImage: "person.crop.circle.badge.exclamationmark", description: Text("Войдите, чтобы загрузить списки профиля."))
-                } else if isLoading {
+                } else if isLoading && releases.isEmpty {
                     ProgressView("Загрузка...")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 28)
@@ -38,6 +38,9 @@ struct ListsView: View {
             }
             .padding()
         }
+        .swipeNavigation(items: ProfileListTab.allCases, selected: $selectedTab) { tab in
+            handleTabChange(tab, source: "swipe")
+        }
         .navigationTitle("Списки")
         .refreshable {
             await reload()
@@ -45,6 +48,7 @@ struct ListsView: View {
         .task {
             guard !didLoad else { return }
             didLoad = true
+            applyCachedList(for: selectedTab)
             await reload()
         }
     }
@@ -54,13 +58,7 @@ struct ListsView: View {
             HStack(spacing: 10) {
                 ForEach(ProfileListTab.allCases) { tab in
                     Button {
-                        guard selectedTab != tab else { return }
-                        selectedTab = tab
-                        appState.diagnosticsLogger.log(level: .info, category: .navigation, message: "Lists tab selected", metadata: [
-                            "tab": tab.title,
-                            "status": tab.status?.rawValue.description ?? "-"
-                        ])
-                        Task { await reload() }
+                        handleTabChange(tab, source: "tap")
                     } label: {
                         Text(tab.title)
                             .font(.subheadline.weight(.medium))
@@ -72,6 +70,39 @@ struct ListsView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private func handleTabChange(_ tab: ProfileListTab, source: String) {
+        guard selectedTab != tab || source == "swipe" else { return }
+        let oldTab = selectedTab
+        selectedTab = tab
+        appState.diagnosticsLogger.log(level: .info, category: .navigation, message: "Lists tab selected", metadata: [
+            "screen": "lists",
+            "oldTab": oldTab.title,
+            "newTab": tab.title,
+            "tab": tab.title,
+            "status": tab.status?.rawValue.description ?? "-",
+            "tab_change_source": source
+        ])
+        applyCachedList(for: tab)
+        Task { await reload() }
+    }
+
+    private func applyCachedList(for tab: ProfileListTab) {
+        if let cached = appState.dataCache.listFeed(for: tab) {
+            releases = cached
+            output = ""
+            appState.diagnosticsLogger.log(level: .debug, category: .navigation, message: "List cache hit", metadata: [
+                "tab": tab.title,
+                "count": "\(cached.count)"
+            ])
+        } else {
+            releases = []
+            output = ""
+            appState.diagnosticsLogger.log(level: .debug, category: .navigation, message: "List cache miss", metadata: [
+                "tab": tab.title
+            ])
         }
     }
 
@@ -88,6 +119,9 @@ struct ListsView: View {
     }
 
     private func loadPage(reset: Bool) async {
+        let tab = selectedTab
+        let requestPage = page
+        let hadVisibleData = !releases.isEmpty
         if reset {
             isLoading = true
         } else {
@@ -100,37 +134,107 @@ struct ListsView: View {
 
         do {
             let service = ListsService(apiClient: appState.makeAPIClient())
-            let endpoint = selectedTab.endpoint(page: page)
+            let endpoint = tab.endpoint(page: requestPage)
             appState.diagnosticsLogger.log(level: .info, category: .navigation, message: "List request started", metadata: [
-                "tab": selectedTab.title,
+                "tab": tab.title,
                 "endpoint": endpoint.resolvedPath,
-                "status": selectedTab.status?.rawValue.description ?? "-",
-                "page": "\(page)"
+                "status": tab.status?.rawValue.description ?? "-",
+                "page": "\(requestPage)",
+                "sort": endpoint.queryItems["sort"] ?? "-"
             ])
-            let response = try await service.releases(tab: selectedTab, page: page)
-            let newReleases = response.content ?? []
-            releases = reset ? newReleases : releases + newReleases
-            canLoadMore = !newReleases.isEmpty && page + 1 < (response.totalPageCount ?? Int.max)
-            output = releases.isEmpty ? "Для «\(selectedTab.title)» релизы не декодированы." : ""
+            let response = try await service.releases(tab: tab, page: requestPage)
+            let newReleases = newestFirstIfTimestamped(response.content ?? [])
+            guard tab == selectedTab else { return }
+            releases = reset ? newReleases : uniqueReleases(releases + newReleases)
+            if reset {
+                appState.dataCache.storeListFeed(newReleases, for: tab)
+            }
+            canLoadMore = !newReleases.isEmpty && requestPage + 1 < (response.totalPageCount ?? Int.max)
+            output = releases.isEmpty ? "Для «\(tab.title)» релизы не декодированы." : ""
             appState.diagnosticsLogger.log(level: .info, category: .navigation, message: "List request succeeded", metadata: [
-                "tab": selectedTab.title,
+                "tab": tab.title,
                 "endpoint": endpoint.resolvedPath,
-                "status": selectedTab.status?.rawValue.description ?? "-",
-                "page": "\(page)",
+                "status": tab.status?.rawValue.description ?? "-",
+                "page": "\(requestPage)",
+                "sort": endpoint.queryItems["sort"] ?? "-",
                 "resultCount": "\(newReleases.count)",
                 "firstItems": newReleases.prefix(5).map { "\($0.id.map(String.init) ?? "-"):\($0.displayTitle)" }.joined(separator: " | "),
+                "timestampFields": newReleases.prefix(5).map { $0.listAddedSortTimestamp.map(String.init) ?? "-" }.joined(separator: ","),
                 "profileListStatuses": newReleases.compactMap { $0.profileListStatus.map(String.init) }.joined(separator: ",")
             ])
+            if reset, canLoadMore {
+                Task { await prefetchNextPage(for: tab, after: newReleases, totalPageCount: response.totalPageCount) }
+            }
         } catch {
-            if reset { releases = [] }
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .navigation, message: "List request cancelled", metadata: [
+                    "tab": tab.title,
+                    "page": "\(requestPage)"
+                ])
+                return
+            }
+            if reset && !hadVisibleData { releases = [] }
             canLoadMore = false
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .navigation, message: "List request failed", metadata: [
-                "tab": selectedTab.title,
-                "status": selectedTab.status?.rawValue.description ?? "-",
-                "page": "\(page)",
-                "error": output
+                "tab": tab.title,
+                "status": tab.status?.rawValue.description ?? "-",
+                "page": "\(requestPage)",
+                "error": output,
+                "keptVisibleData": hadVisibleData ? "true" : "false"
             ])
         }
+    }
+
+    private func prefetchNextPage(for tab: ProfileListTab, after firstPage: [Release], totalPageCount: Int?) async {
+        guard 1 < (totalPageCount ?? Int.max) else { return }
+        do {
+            let service = ListsService(apiClient: appState.makeAPIClient())
+            appState.diagnosticsLogger.log(level: .debug, category: .navigation, message: "List prefetch started", metadata: [
+                "tab": tab.title,
+                "page": "1",
+                "sort": "\(tab.newestFirstSort)"
+            ])
+            let response = try await service.releases(tab: tab, page: 1)
+            let nextPage = newestFirstIfTimestamped(response.content ?? [])
+            let combined = uniqueReleases(firstPage + nextPage)
+            if tab == selectedTab {
+                releases = combined
+                page = max(page, 1)
+                canLoadMore = !nextPage.isEmpty && 2 < (response.totalPageCount ?? Int.max)
+            }
+            appState.diagnosticsLogger.log(level: .debug, category: .navigation, message: "List prefetch succeeded", metadata: [
+                "tab": tab.title,
+                "page": "1",
+                "receivedCount": "\(nextPage.count)",
+                "combinedCount": "\(combined.count)"
+            ])
+        } catch {
+            let level: DiagnosticLevel = error.isUserInvisibleCancellation ? .debug : .warning
+            appState.diagnosticsLogger.log(level: level, category: .navigation, message: "List prefetch failed", metadata: [
+                "tab": tab.title,
+                "page": "1",
+                "error": error.isUserInvisibleCancellation ? "cancelled" : Redactor.redact(error.localizedDescription)
+            ])
+        }
+    }
+
+    private func newestFirstIfTimestamped(_ loaded: [Release]) -> [Release] {
+        guard loaded.count > 1, loaded.allSatisfy({ $0.listAddedSortTimestamp != nil }) else {
+            return loaded
+        }
+        return loaded.sorted { ($0.listAddedSortTimestamp ?? 0, $0.id ?? 0) > ($1.listAddedSortTimestamp ?? 0, $1.id ?? 0) }
+    }
+
+    private func uniqueReleases(_ loaded: [Release]) -> [Release] {
+        var seen = Set<Int64>()
+        var result: [Release] = []
+        for release in loaded {
+            if let id = release.id, !seen.insert(id).inserted {
+                continue
+            }
+            result.append(release)
+        }
+        return result
     }
 }

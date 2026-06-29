@@ -46,6 +46,15 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Профиль") {
+                NavigationLink {
+                    ProfileEditView()
+                } label: {
+                    Label("Редактирование профиля", systemImage: "person.crop.circle")
+                }
+                .disabled(appState.session?.profileId == nil && !appState.config.isMockMode)
+            }
+
             Section("Разработка") {
                 NavigationLink {
                     DeveloperToolsView()
@@ -59,6 +68,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Настройки")
+        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
+        .keyboardDoneToolbar()
         .onAppear {
             appState.refreshTokenStatus()
         }

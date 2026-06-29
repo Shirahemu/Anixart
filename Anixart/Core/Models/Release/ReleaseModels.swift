@@ -24,6 +24,7 @@ struct Release: Codable, Equatable, Identifiable {
     let category: Category?
     let collectionCount: Int64?
     let commentCount: Int64?
+    let commentsCount: Int64?
     let commentPerDayCount: Int?
     let comments: [ReleaseComment]?
     let completedCount: Int?
@@ -88,6 +89,11 @@ struct Release: Codable, Equatable, Identifiable {
     let year: String?
     let yourVote: Int?
     let myVote: Int?
+    let addedAt: Int64?
+    let addedDate: Int64?
+    let favoriteAddedAt: Int64?
+    let profileListAddedAt: Int64?
+    let timestamp: Int64?
 
     var displayTitle: String {
         titleRu ?? titleOriginal ?? titleAlt ?? "Release \(id.map(String.init) ?? "")"
@@ -104,6 +110,25 @@ struct Release: Codable, Equatable, Identifiable {
 
     var favoriteDisplayCount: Int? {
         favoriteCount ?? favoritesCount
+    }
+
+    var resolvedCommentCount: Int64? {
+        commentCount ?? commentsCount ?? comments.map { Int64($0.count) }
+    }
+
+    var personalStatusTitle: String? {
+        guard let profileListStatus,
+              let status = ProfileListStatus(rawValue: profileListStatus)
+        else {
+            return nil
+        }
+        return status.visibleOverlayTitle
+    }
+
+    var listAddedSortTimestamp: Int64? {
+        [profileListAddedAt, favoriteAddedAt, addedAt, addedDate, timestamp]
+            .compactMap { $0 }
+            .max()
     }
 
     var episodeProgressText: String? {

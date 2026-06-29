@@ -22,6 +22,7 @@ struct ReleaseDetailsView: View {
     @State private var userRatingState: Int?
     @State private var isUpdatingRating = false
     @State private var ratingError: String?
+    @State private var resolvedCommentCount: Int64?
     @State private var output = ""
     @State private var isLoadingRelease = false
     @State private var isLoadingEpisodes = false
@@ -29,6 +30,7 @@ struct ReleaseDetailsView: View {
     @State private var isDescriptionExpanded = false
     @State private var imageViewerRoute: ImageViewerRoute?
     @State private var playerRoute: PlayerRoute?
+    @State private var allEpisodesRoute: AllEpisodesRoute?
     @State private var revealedSpoilerCommentIDs: Set<String> = []
 
     init(releaseId: Int64, initialRelease: Release? = nil) {
@@ -39,6 +41,7 @@ struct ReleaseDetailsView: View {
         _favoriteCountState = State(initialValue: initialRelease?.favoriteDisplayCount)
         _profileStatusState = State(initialValue: ProfileListStatus(rawValue: initialRelease?.profileListStatus ?? 0))
         _userRatingState = State(initialValue: initialRelease?.normalizedUserRating)
+        _resolvedCommentCount = State(initialValue: initialRelease?.resolvedCommentCount)
     }
 
     var body: some View {
@@ -52,8 +55,8 @@ struct ReleaseDetailsView: View {
                     genresCard(release)
                     screenshotsCard(release)
                     descriptionCard(release)
-                    releaseCollectionCard("Связанные тайтлы", releases: release.relatedReleases, inlineLimit: 3, showsAllLink: true)
-                    releaseCollectionCard("Рекомендации", releases: release.recommendedReleases, inlineLimit: 5, showsAllLink: false)
+                    releaseCollectionCard("Связанные тайтлы", releases: release.relatedReleases, inlineLimit: 3, relatedCount: release.relatedCount, showsAllLink: true)
+                    releaseCollectionCard("Рекомендации", releases: release.recommendedReleases, inlineLimit: 5, relatedCount: nil, showsAllLink: false)
                     commentsCard(release)
                 } else if isLoadingRelease {
                     ProgressView("Загрузка релиза...")
@@ -70,17 +73,22 @@ struct ReleaseDetailsView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Страница тайтла")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            Button {
-                Task { await loadReleaseAndTypes() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .disabled(isLoadingRelease)
-            .accessibilityLabel("Обновить")
+        .refreshable {
+            await loadReleaseAndTypes()
         }
         .navigationDestination(item: $playerRoute) { route in
             PlayerView(route: route)
+        }
+        .navigationDestination(item: $allEpisodesRoute) { route in
+            AllEpisodesView(
+                route: route,
+                selectedEpisodeID: selectedEpisodeID,
+                selectedEpisodePosition: selectedEpisodePosition,
+                onPlay: { episode in
+                    selectEpisode(episode)
+                    openPlayer(for: episode)
+                }
+            )
         }
         .fullScreenCover(item: $imageViewerRoute) { route in
             ImageGalleryViewer(route: route)
@@ -130,7 +138,7 @@ struct ReleaseDetailsView: View {
                         HStack(spacing: 8) {
                             HeroMetricCard(value: release.ageRating.map { "\($0)+" } ?? "-", label: "возраст", systemImage: "shield")
                             HeroMetricCard(value: heroRatingText(release), label: "оценка", systemImage: "star")
-                            HeroMetricCard(value: release.commentCount.map(String.init) ?? "0", label: "коммент.", systemImage: "text.bubble")
+                            HeroMetricCard(value: resolvedCommentCount.map(String.init) ?? release.resolvedCommentCount.map(String.init) ?? "0", label: "коммент.", systemImage: "text.bubble")
                         }
                     }
                 }
@@ -240,6 +248,16 @@ struct ReleaseDetailsView: View {
                     }
                 }
 
+                if let continueEpisode {
+                    Button {
+                        openPlayer(for: continueEpisode)
+                    } label: {
+                        Label("Продолжить с \(continueEpisode.position ?? 0) серии", systemImage: "play.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 if episodes.isEmpty {
                     Text(sourceSummary)
                         .font(.footnote)
@@ -247,7 +265,7 @@ struct ReleaseDetailsView: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(episodes, id: \.stableEpisodeID) { episode in
+                            ForEach(inlineEpisodes, id: \.stableEpisodeID) { episode in
                                 Button {
                                     selectEpisode(episode)
                                 } label: {
@@ -260,6 +278,23 @@ struct ReleaseDetailsView: View {
                                     .frame(width: 64, height: 48)
                                     .foregroundStyle(isEpisodeSelected(episode) ? .white : .primary)
                                     .background(isEpisodeSelected(episode) ? Color.accentColor : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            if episodes.count > 24 {
+                                Button {
+                                    openAllEpisodes()
+                                } label: {
+                                    VStack(spacing: 2) {
+                                        Text("Ещё")
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("все серии")
+                                            .font(.caption2)
+                                    }
+                                    .frame(width: 72, height: 48)
+                                    .foregroundStyle(.primary)
+                                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -330,20 +365,8 @@ struct ReleaseDetailsView: View {
                             Button {
                                 openImageViewer(images: urls, initialIndex: item.offset)
                             } label: {
-                                AsyncImage(url: URL(string: item.element)) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image.resizable().scaledToFill()
-                                    case .failure(_), .empty:
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .fill(Color.secondary.opacity(0.16))
-                                            .overlay {
-                                                Image(systemName: "photo")
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                    @unknown default:
-                                        RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.16))
-                                    }
+                                CachedRemoteImageView(urlString: item.element, contentMode: .fill) {
+                                    screenshotPlaceholder(cornerRadius: 10)
                                 }
                                 .frame(width: 190, height: 107)
                                 .clipped()
@@ -361,22 +384,26 @@ struct ReleaseDetailsView: View {
     private func descriptionCard(_ release: Release) -> some View {
         if let description = release.description, !description.isEmpty {
             detailsCard(title: "Описание") {
-                Text(description)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .lineLimit(isDescriptionExpanded ? nil : 7)
-                    .textSelection(.enabled)
-
-                Button(isDescriptionExpanded ? "Свернуть" : "Подробнее") {
-                    isDescriptionExpanded.toggle()
-                }
-                .font(.subheadline.weight(.semibold))
+                ExpandableDescriptionText(
+                    description,
+                    lineLimit: 7,
+                    isExpanded: $isDescriptionExpanded
+                )
             }
         }
     }
 
+    private func screenshotPlaceholder(cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(Color.secondary.opacity(0.16))
+            .overlay {
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            }
+    }
+
     @ViewBuilder
-    private func releaseCollectionCard(_ title: String, releases: [Release]?, inlineLimit: Int, showsAllLink: Bool) -> some View {
+    private func releaseCollectionCard(_ title: String, releases: [Release]?, inlineLimit: Int, relatedCount: Int64?, showsAllLink: Bool) -> some View {
         if let releases, !releases.isEmpty {
             detailsCard(title: title) {
                 VStack(spacing: 0) {
@@ -395,21 +422,12 @@ struct ReleaseDetailsView: View {
                         }
                     }
 
-                    if showsAllLink, releases.count > inlineLimit {
+                    if showsAllLink, releases.count > inlineLimit || (relatedCount ?? 0) > inlineLimit {
                         Divider()
                         NavigationLink {
                             ReleaseCollectionListView(title: title, releases: releases)
                         } label: {
-                            HStack {
-                                Text("Показать все")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 10)
+                            AppDisclosureRow(title: "Показать все")
                         }
                         .buttonStyle(.plain)
                     }
@@ -421,9 +439,10 @@ struct ReleaseDetailsView: View {
     @ViewBuilder
     private func commentsCard(_ release: Release) -> some View {
         let comments = release.comments ?? []
-        let shouldShowCommentsEntry = !comments.isEmpty || (release.commentCount ?? 0) > 0
+        let displayCount = resolvedCommentCount ?? release.resolvedCommentCount
+        let shouldShowCommentsEntry = !comments.isEmpty || (displayCount ?? 0) > 0
         if shouldShowCommentsEntry {
-            detailsCard(title: release.commentCount.map { "Комментарии · \($0)" } ?? "Комментарии") {
+            detailsCard(title: commentsTitle(displayCount: displayCount, previewCount: comments.count)) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(comments.prefix(5), id: \.stableCommentID) { comment in
                         ReleaseDetailsCommentPreviewRowView(
@@ -434,19 +453,12 @@ struct ReleaseDetailsView: View {
                         }
                     }
 
+                    Divider()
+
                     NavigationLink {
                         ReleaseCommentsView(releaseId: release.id ?? releaseId, title: release.displayTitle)
                     } label: {
-                        HStack {
-                            Text(comments.isEmpty ? "Показать все комментарии" : "Все комментарии")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 8)
+                        AppDisclosureRow(title: comments.isEmpty ? "Показать все комментарии" : "Все комментарии")
                     }
                     .buttonStyle(.plain)
                     .disabled((release.id ?? releaseId) <= 0)
@@ -531,8 +543,38 @@ struct ReleaseDetailsView: View {
     }
 
     private var selectedPlayableEpisode: Episode? {
-        episodes.first { isEpisodeSelected($0) && playerRoute(for: $0) != nil }
-            ?? episodes.first { playerRoute(for: $0) != nil }
+        sortedEpisodes.first { isEpisodeSelected($0) && playerRoute(for: $0) != nil }
+            ?? continueEpisode
+            ?? sortedEpisodes.first { playerRoute(for: $0) != nil }
+    }
+
+    private var sortedEpisodes: [Episode] {
+        episodes.sorted { ($0.position ?? Int.max, $0.id ?? 0) < ($1.position ?? Int.max, $1.id ?? 0) }
+    }
+
+    private var inlineEpisodes: [Episode] {
+        Array(sortedEpisodes.prefix(24))
+    }
+
+    private var continueEpisode: Episode? {
+        let candidate: Episode?
+        if let last = release?.lastViewEpisode, let position = last.position, position > 0 {
+            candidate = sortedEpisodes.first { $0.position == position }
+                ?? Episode(
+                    id: last.id,
+                    isWatched: true,
+                    name: last.name ?? "\(position) серия",
+                    position: position,
+                    releaseId: releaseId,
+                    source: selectedSource,
+                    sourceId: last.sourceId ?? selectedSourceID,
+                    url: last.url
+                )
+        } else {
+            candidate = sortedEpisodes.filter { $0.isWatched == true }.max { ($0.position ?? 0) < ($1.position ?? 0) }
+        }
+        guard let candidate, playerRoute(for: candidate) != nil else { return nil }
+        return candidate
     }
 
     private func heroRatingText(_ release: Release) -> String {
@@ -569,6 +611,13 @@ struct ReleaseDetailsView: View {
         recordHistoryOpen(route)
     }
 
+    private func openAllEpisodes() {
+        allEpisodesRoute = AllEpisodesRoute(
+            episodes: sortedEpisodes,
+            continueEpisode: continueEpisode
+        )
+    }
+
     private func recordHistoryOpen(_ route: PlayerRoute) {
         Task {
             appState.diagnosticsLogger.log(level: .info, category: .player, message: "History add started", metadata: [
@@ -586,6 +635,14 @@ struct ReleaseDetailsView: View {
                     "code": response.code.map(String.init) ?? "-"
                 ])
             } catch {
+                if error.isUserInvisibleCancellation {
+                    appState.diagnosticsLogger.log(level: .debug, category: .player, message: "History add cancelled", metadata: [
+                        "releaseId": "\(route.releaseId)",
+                        "sourceId": "\(route.sourceId)",
+                        "position": "\(route.episodePosition)"
+                    ])
+                    return
+                }
                 appState.diagnosticsLogger.log(level: .warning, category: .player, message: "History add failed", metadata: [
                     "releaseId": "\(route.releaseId)",
                     "sourceId": "\(route.sourceId)",
@@ -610,8 +667,16 @@ struct ReleaseDetailsView: View {
             sourceId: sourceId,
             sourceName: selectedSource?.name,
             episodePosition: position,
-            episodeName: episode.name
+            episodeName: episode.name,
+            episodes: playerEpisodeRefs
         )
+    }
+
+    private var playerEpisodeRefs: [PlayerEpisodeRef] {
+        sortedEpisodes.compactMap { episode in
+            guard let position = episode.position else { return nil }
+            return PlayerEpisodeRef(id: episode.id, position: position, name: episode.name)
+        }
     }
 
     private func openImageViewer(images: [String], initialIndex: Int) {
@@ -664,6 +729,16 @@ struct ReleaseDetailsView: View {
             .joined(separator: ", ")
     }
 
+    private func commentsTitle(displayCount: Int64?, previewCount: Int) -> String {
+        if let displayCount, displayCount > 0 {
+            return "Комментарии · \(displayCount)"
+        }
+        if previewCount > 0 {
+            return "Комментарии · \(previewCount)+"
+        }
+        return "Комментарии"
+    }
+
     private func loadReleaseAndTypes() async {
         guard releaseId > 0 else {
             output = "ID релиза отсутствует."
@@ -677,11 +752,14 @@ struct ReleaseDetailsView: View {
             appState.diagnosticsLogger.log(level: .info, category: .release, message: "Release details load started", metadata: ["releaseId": "\(releaseId)"])
             let releaseService = ReleaseService(apiClient: appState.makeAPIClient())
             let episodeService = EpisodeService(apiClient: appState.makeAPIClient())
-            if let loadedRelease = try await releaseService.release(id: releaseId).release {
+            async let releaseResponse = releaseService.release(id: releaseId)
+            async let typesResponse = episodeService.types(releaseId: releaseId)
+            let (loadedReleaseResponse, loadedTypesResponse) = try await (releaseResponse, typesResponse)
+            if let loadedRelease = loadedReleaseResponse.release {
                 release = loadedRelease
                 syncInteractionState(from: loadedRelease)
             }
-            types = try await episodeService.types(releaseId: releaseId).types ?? []
+            types = loadedTypesResponse.types ?? []
             output = ""
             appState.diagnosticsLogger.log(level: .info, category: .release, message: "Episode types load succeeded", metadata: [
                 "releaseId": "\(releaseId)",
@@ -692,7 +770,14 @@ struct ReleaseDetailsView: View {
             if selectedTypeID != nil {
                 await loadSourcesForSelectedType()
             }
+            await resolveCommentCountIfNeeded()
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Release details load cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release details load failed", metadata: [
                 "releaseId": "\(releaseId)",
@@ -710,10 +795,56 @@ struct ReleaseDetailsView: View {
                 syncInteractionState(from: loadedRelease)
             }
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Release refresh cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release refresh failed", metadata: [
                 "releaseId": "\(releaseId)",
                 "error": output
+            ])
+        }
+    }
+
+    private func resolveCommentCountIfNeeded() async {
+        guard releaseId > 0 else { return }
+        let previewCount = release?.comments?.count ?? 0
+        let initialCount = release?.commentCount ?? release?.commentsCount
+        appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Comment count resolve started", metadata: [
+            "releaseId": "\(releaseId)",
+            "initialCommentCount": initialCount.map(String.init) ?? "-",
+            "previewCount": "\(previewCount)"
+        ])
+
+        do {
+            let service = ReleaseCommentService(apiClient: appState.makeAPIClient())
+            let response = try await service.comments(releaseId: releaseId, page: 0, sort: .newest)
+            let total = response.totalCount
+            let fallback = max(Int64(previewCount), initialCount ?? 0)
+            resolvedCommentCount = total ?? (fallback > 0 ? fallback : nil)
+            appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Comment count resolved", metadata: [
+                "releaseId": "\(releaseId)",
+                "initialCommentCount": initialCount.map(String.init) ?? "-",
+                "previewCount": "\(previewCount)",
+                "totalCount": total.map(String.init) ?? "-",
+                "chosenDisplayCount": resolvedCommentCount.map(String.init) ?? "-"
+            ])
+        } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Comment count resolve cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
+            let fallback = max(Int64(previewCount), initialCount ?? 0)
+            resolvedCommentCount = fallback > 0 ? fallback : resolvedCommentCount
+            appState.diagnosticsLogger.log(level: .warning, category: .release, message: "Comment count resolve failed", metadata: [
+                "releaseId": "\(releaseId)",
+                "error": Redactor.redact(error.localizedDescription),
+                "chosenDisplayCount": resolvedCommentCount.map(String.init) ?? "-"
             ])
         }
     }
@@ -723,6 +854,7 @@ struct ReleaseDetailsView: View {
         favoriteCountState = release.favoriteDisplayCount
         profileStatusState = ProfileListStatus(rawValue: release.profileListStatus ?? 0)
         userRatingState = release.normalizedUserRating
+        resolvedCommentCount = release.resolvedCommentCount
     }
 
     private func toggleFavorite() async {
@@ -753,6 +885,12 @@ struct ReleaseDetailsView: View {
             ])
             await reloadReleaseOnly()
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Favorite toggle cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Favorite toggle failed", metadata: [
                 "releaseId": "\(releaseId)",
@@ -820,6 +958,12 @@ struct ReleaseDetailsView: View {
             await reloadReleaseOnly()
         } catch {
             userRatingState = oldVote
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Release rating vote cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             ratingError = DebugResultFormatter.error(error)
             output = ratingError ?? ""
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating vote failed", metadata: [
@@ -873,6 +1017,12 @@ struct ReleaseDetailsView: View {
             await reloadReleaseOnly()
         } catch {
             userRatingState = oldVote
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Release rating delete cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             ratingError = DebugResultFormatter.error(error)
             output = ratingError ?? ""
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release rating delete failed", metadata: [
@@ -922,6 +1072,12 @@ struct ReleaseDetailsView: View {
             ])
             await reloadReleaseOnly()
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Profile list status change cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Profile list status change failed", metadata: [
                 "releaseId": "\(releaseId)",
@@ -985,6 +1141,13 @@ struct ReleaseDetailsView: View {
                 await loadEpisodesForSelection()
             }
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Episode sources load cancelled", metadata: [
+                    "releaseId": "\(releaseId)",
+                    "typeId": "\(selectedTypeID)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Episode sources load failed", metadata: [
                 "releaseId": "\(releaseId)",
@@ -1008,7 +1171,8 @@ struct ReleaseDetailsView: View {
                 "sourceId": "\(selectedSourceID)"
             ])
             let service = EpisodeService(apiClient: appState.makeAPIClient())
-            episodes = try await service.episodes(releaseId: releaseId, typeId: selectedTypeID, sourceId: selectedSourceID).episodes ?? []
+            episodes = (try await service.episodes(releaseId: releaseId, typeId: selectedTypeID, sourceId: selectedSourceID).episodes ?? [])
+                .sorted { ($0.position ?? Int.max, $0.id ?? 0) < ($1.position ?? Int.max, $1.id ?? 0) }
             output = episodes.isEmpty ? "Эпизоды не декодированы." : ""
             autoselectEpisodeIfNeeded()
             appState.diagnosticsLogger.log(level: .info, category: .release, message: "Episode list load succeeded", metadata: [
@@ -1019,6 +1183,14 @@ struct ReleaseDetailsView: View {
                 "selectedEpisode": selectedEpisodePosition.map(String.init) ?? "-"
             ])
         } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Episode list load cancelled", metadata: [
+                    "releaseId": "\(releaseId)",
+                    "typeId": "\(selectedTypeID)",
+                    "sourceId": "\(selectedSourceID)"
+                ])
+                return
+            }
             output = DebugResultFormatter.error(error)
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Episode list load failed", metadata: [
                 "releaseId": "\(releaseId)",
@@ -1057,9 +1229,12 @@ struct ReleaseDetailsView: View {
 
     private func autoselectEpisodeIfNeeded() {
         guard selectedEpisodeID == nil, selectedEpisodePosition == nil else { return }
-        let lastWatched = episodes.last { $0.isWatched == true }
-        let latestReleased = episodes.max { ($0.position ?? 0) < ($1.position ?? 0) }
-        let chosen = lastWatched ?? latestReleased ?? episodes.first
+        let lastViewPosition = release?.lastViewEpisode?.position
+        let lastViewed = lastViewPosition.flatMap { position in
+            episodes.first { $0.position == position }
+        }
+        let lastWatched = episodes.filter { $0.isWatched == true }.max { ($0.position ?? 0) < ($1.position ?? 0) }
+        let chosen = lastViewed ?? lastWatched ?? episodes.first
         if let chosen {
             selectEpisode(chosen)
         }
@@ -1078,6 +1253,78 @@ private struct CardContainer<Content: View>: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct ExpandableDescriptionText: View {
+    let text: String
+    let lineLimit: Int
+    @Binding var isExpanded: Bool
+    @State private var collapsedHeight: CGFloat = 0
+    @State private var expandedHeight: CGFloat = 0
+
+    init(_ text: String, lineLimit: Int, isExpanded: Binding<Bool>) {
+        self.text = text
+        self.lineLimit = lineLimit
+        _isExpanded = isExpanded
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .lineLimit(isExpanded ? nil : lineLimit)
+                .textSelection(.enabled)
+                .background(measurementLayer)
+
+            if isActuallyTruncated {
+                Button(isExpanded ? "Свернуть" : "Подробнее") {
+                    isExpanded.toggle()
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+        }
+    }
+
+    private var isActuallyTruncated: Bool {
+        expandedHeight > 0 && collapsedHeight > 0 && expandedHeight > collapsedHeight + 1
+    }
+
+    private var measurementLayer: some View {
+        ZStack {
+            Text(text)
+                .font(.callout)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .readHeight { collapsedHeight = $0 }
+
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .readHeight { expandedHeight = $0 }
+        }
+        .hidden()
+    }
+}
+
+private struct HeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private extension View {
+    func readHeight(_ onChange: @escaping (CGFloat) -> Void) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: HeightPreferenceKey.self, value: proxy.size.height)
+            }
+        }
+        .onPreferenceChange(HeightPreferenceKey.self, perform: onChange)
     }
 }
 
@@ -1167,18 +1414,22 @@ private struct FlowLayout: Layout {
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
-        let maxWidth = max(proposalWidth, 1)
+        let maxWidth = proposalWidth.isFinite ? max(proposalWidth, 1) : 320
 
         for index in subviews.indices {
             let size = subviews[index].sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
+            let itemSize = CGSize(
+                width: size.width.isFinite ? max(size.width, 0) : 0,
+                height: size.height.isFinite ? max(size.height, 0) : 0
+            )
+            if x > 0, x + itemSize.width > maxWidth {
                 x = 0
                 y += rowHeight + spacing
                 rowHeight = 0
             }
-            items.append(LayoutItem(index: index, frame: CGRect(origin: CGPoint(x: x, y: y), size: size)))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+            items.append(LayoutItem(index: index, frame: CGRect(origin: CGPoint(x: x, y: y), size: itemSize)))
+            x += itemSize.width + spacing
+            rowHeight = max(rowHeight, itemSize.height)
         }
 
         return (CGSize(width: maxWidth, height: y + rowHeight), items)
@@ -1212,19 +1463,9 @@ private struct ImageGalleryViewer: View {
 
             TabView(selection: $selectedIndex) {
                 ForEach(Array(route.urls.enumerated()), id: \.element) { item in
-                    AsyncImage(url: URL(string: item.element)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        case .failure(_), .empty:
-                            ProgressView()
-                                .tint(.white)
-                        @unknown default:
-                            ProgressView()
-                                .tint(.white)
-                        }
+                    CachedRemoteImageView(urlString: item.element, contentMode: .fit) {
+                        ProgressView()
+                            .tint(.white)
                     }
                     .padding(18)
                     .tag(item.offset)
@@ -1283,6 +1524,78 @@ private struct ReleaseCollectionListView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct AllEpisodesRoute: Identifiable, Equatable, Hashable {
+    let id = UUID()
+    let episodes: [Episode]
+    let continueEpisode: Episode?
+
+    static func == (lhs: AllEpisodesRoute, rhs: AllEpisodesRoute) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+private struct AllEpisodesView: View {
+    let route: AllEpisodesRoute
+    let selectedEpisodeID: Int64?
+    let selectedEpisodePosition: Int?
+    let onPlay: (Episode) -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 8), count: 5)
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                if let continueEpisode = route.continueEpisode {
+                    Button {
+                        onPlay(continueEpisode)
+                    } label: {
+                        Label("Продолжить с \(continueEpisode.position ?? 0) серии", systemImage: "play.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(route.episodes, id: \.stableEpisodeID) { episode in
+                        Button {
+                            onPlay(episode)
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(episode.position.map(String.init) ?? "Эп.")
+                                    .font(.subheadline.weight(.bold))
+                                if episode.isWatched == true {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .foregroundStyle(isSelected(episode) ? .white : .primary)
+                            .background(isSelected(episode) ? Color.accentColor : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Серия \(episode.position ?? 0)")
+                    }
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Все серии")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func isSelected(_ episode: Episode) -> Bool {
+        if let id = episode.id, let selectedEpisodeID {
+            return id == selectedEpisodeID
+        }
+        return episode.position == selectedEpisodePosition
     }
 }
 

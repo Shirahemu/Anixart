@@ -49,16 +49,9 @@ struct ProfileHistoryRowView: View {
 
     @ViewBuilder
     private var poster: some View {
-        if let image = release.posterURLString, let url = URL(string: image) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure(_), .empty:
-                    placeholder
-                @unknown default:
-                    placeholder
-                }
+        if let image = release.posterURLString {
+            CachedRemoteImageView(urlString: image, contentMode: .fill) {
+                placeholder
             }
             .clipShape(RoundedRectangle(cornerRadius: style == .compact ? 7 : 9))
         } else {

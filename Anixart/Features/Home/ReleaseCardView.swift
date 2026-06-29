@@ -37,18 +37,9 @@ struct ReleaseCardView: View {
 
     @ViewBuilder
     private var poster: some View {
-        if let image = release.image, let url = URL(string: image) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure(_):
-                    placeholder
-                case .empty:
-                    ProgressView()
-                @unknown default:
-                    placeholder
-                }
+        if let image = release.image {
+            CachedRemoteImageView(urlString: image, contentMode: .fill) {
+                placeholder
             }
             .frame(width: 64, height: 92)
             .clipShape(RoundedRectangle(cornerRadius: 8))

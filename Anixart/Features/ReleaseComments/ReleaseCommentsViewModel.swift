@@ -210,6 +210,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
             }
             cancelComposerMode()
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment add/edit cancelled", ["releaseId": "\(releaseId)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             errorMessage = message
             log(.error, "Release comment add/edit failed", ["releaseId": "\(releaseId)", "error": message])
@@ -237,6 +241,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
             }
             log(.info, "Release comment delete succeeded", ["commentId": "\(commentId)"])
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment delete cancelled", ["commentId": "\(commentId)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             errorMessage = message
             log(.error, "Release comment delete failed", ["commentId": "\(commentId)", "error": message])
@@ -256,6 +264,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
             log(.info, "Release comment vote succeeded", ["commentId": "\(commentId)", "oldVote": "\(oldVote.rawValue)", "newVote": "\(nextVote.rawValue)"])
         } catch {
             replaceComment(comment)
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment vote cancelled", ["commentId": "\(commentId)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             errorMessage = message
             log(.error, "Release comment vote failed", ["commentId": "\(commentId)", "error": message])
@@ -303,6 +315,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
             reportRoute = nil
             reportDetails = ""
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment report cancelled", ["commentId": "\(route.commentId)", "reasonId": "\(reasonId)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             reportErrorMessage = message
             log(.error, "Release comment report failed", ["commentId": "\(route.commentId)", "reasonId": "\(reasonId)", "error": message])
@@ -347,6 +363,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
                 "totalPageCount": totalPageCount.map(String.init) ?? "-"
             ])
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comments load cancelled", ["releaseId": "\(releaseId)", "page": "\(page)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             errorMessage = message
             log(.error, "Release comments load failed", ["releaseId": "\(releaseId)", "page": "\(page)", "error": message])
@@ -399,6 +419,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
             }
             log(.info, "Release comment reply load succeeded", ["commentId": "\(commentId)", "page": "\(response.currentPage ?? nextPage)", "count": "\(replies.count)"])
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment reply load cancelled", ["commentId": "\(commentId)", "page": "\(nextPage)"])
+                return
+            }
             let message = Self.errorMessage(from: error)
             errorMessage = message
             log(.error, "Release comment reply load failed", ["commentId": "\(commentId)", "page": "\(nextPage)", "error": message])
@@ -414,6 +438,10 @@ final class ReleaseCommentsViewModel: ObservableObject {
         do {
             reportReasons = try await service.releaseCommentReasons()
         } catch {
+            if error.isUserInvisibleCancellation {
+                log(.debug, "Release comment report reasons cancelled")
+                return
+            }
             let message = Self.errorMessage(from: error)
             reportErrorMessage = message
             log(.error, "Release comment report reasons failed", ["error": message])
