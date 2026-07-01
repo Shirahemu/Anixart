@@ -11,6 +11,10 @@ final class EpisodeService {
         try await apiClient.send(.episodeTypes(releaseId: releaseId), as: TypesResponse.self)
     }
 
+    func allTypes() async throws -> TypesResponse {
+        try await apiClient.send(.allEpisodeTypes(), as: TypesResponse.self)
+    }
+
     func sources(releaseId: Int64, typeId: Int64) async throws -> SourcesResponse {
         try await apiClient.send(.episodeSources(releaseId: releaseId, typeId: typeId), as: SourcesResponse.self)
     }
@@ -21,5 +25,13 @@ final class EpisodeService {
 
     func target(releaseId: Int64, sourceId: Int64, position: Int) async throws -> EpisodeTargetResponse {
         try await apiClient.send(.episodeTarget(releaseId: releaseId, sourceId: sourceId, position: position), as: EpisodeTargetResponse.self)
+    }
+
+    func watch(releaseId: Int64, sourceId: Int64, position: Int) async throws -> Response {
+        try await apiClient.send(.episodeWatch(releaseId: releaseId, sourceId: sourceId, position: position), as: Response.self)
+    }
+
+    func unwatch(releaseId: Int64, sourceId: Int64, position: Int) async throws -> Response {
+        try await apiClient.send(.episodeUnwatch(releaseId: releaseId, sourceId: sourceId, position: position), as: Response.self)
     }
 }

@@ -13,6 +13,15 @@ final class HomeFeedService {
 
     func feed(for category: HomeCategory, page: Int = 0) async throws -> HomeFeedResult {
         let response = try await filterService.filter(page: page, body: category.filterBody)
+        return Self.makeResult(for: category, response: response)
+    }
+
+    func feed(filterBody: JSONValue, category: HomeCategory, page: Int = 0) async throws -> HomeFeedResult {
+        let response = try await filterService.filter(page: page, body: filterBody)
+        return Self.makeResult(for: category, response: response)
+    }
+
+    private static func makeResult(for category: HomeCategory, response: PageableResponse<Release>) -> HomeFeedResult {
         let raw = response.content ?? []
         let processed = category == .latest ? Self.processLatest(raw) : raw
         return HomeFeedResult(
@@ -41,7 +50,9 @@ final class HomeFeedService {
         if let categoryId {
             body["category_id"] = .number(Double(categoryId))
         }
-        body.merge(custom.bodyFields) { _, new in new }
+        if case .object(let customFields) = custom.toFilterRequestBody() {
+            body.merge(customFields) { _, new in new }
+        }
         return .object(body)
     }
 
@@ -137,59 +148,5 @@ enum HomeCategory: String, CaseIterable, Identifiable {
         case .my, .latest:
             nil
         }
-    }
-}
-
-struct HomeCustomFilterSettings: Codable, Equatable {
-    var country: Int64?
-    var category: Int64?
-    var genres: [Int64] = []
-    var excludedProfileLists: [Int64] = []
-    var voiceovers: [Int64] = []
-    var studio: Int64?
-    var source: Int64?
-    var startYear: Int?
-    var endYear: Int?
-    var season: Int?
-    var minEpisodes: Int?
-    var maxEpisodes: Int?
-    var status: Int64?
-    var minDuration: Int?
-    var maxDuration: Int?
-    var ageRatings: [Int] = []
-    var sort: Int?
-
-    static let empty = HomeCustomFilterSettings()
-    private static let storageKey = "homeCustomFilterSettings"
-
-    static func load() -> HomeCustomFilterSettings {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let settings = try? JSONDecoder().decode(HomeCustomFilterSettings.self, from: data)
-        else {
-            return .empty
-        }
-        return settings
-    }
-
-    var bodyFields: [String: JSONValue] {
-        var fields: [String: JSONValue] = [:]
-        if let country { fields["country_id"] = .number(Double(country)) }
-        if let category { fields["category_id"] = .number(Double(category)) }
-        if !genres.isEmpty { fields["genres"] = .array(genres.map { .number(Double($0)) }) }
-        if !excludedProfileLists.isEmpty { fields["excluded_profile_list_statuses"] = .array(excludedProfileLists.map { .number(Double($0)) }) }
-        if !voiceovers.isEmpty { fields["types"] = .array(voiceovers.map { .number(Double($0)) }) }
-        if let studio { fields["studio_id"] = .number(Double(studio)) }
-        if let source { fields["source_id"] = .number(Double(source)) }
-        if let startYear { fields["year_start"] = .number(Double(startYear)) }
-        if let endYear { fields["year_end"] = .number(Double(endYear)) }
-        if let season { fields["season"] = .number(Double(season)) }
-        if let minEpisodes { fields["episodes_min"] = .number(Double(minEpisodes)) }
-        if let maxEpisodes { fields["episodes_max"] = .number(Double(maxEpisodes)) }
-        if let status { fields["status_id"] = .number(Double(status)) }
-        if let minDuration { fields["duration_min"] = .number(Double(minDuration)) }
-        if let maxDuration { fields["duration_max"] = .number(Double(maxDuration)) }
-        if !ageRatings.isEmpty { fields["age_ratings"] = .array(ageRatings.map { .number(Double($0)) }) }
-        if let sort { fields["sort"] = .number(Double(sort)) }
-        return fields
     }
 }

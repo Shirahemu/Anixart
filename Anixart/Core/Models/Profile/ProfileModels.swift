@@ -162,6 +162,7 @@ struct Profile: Codable, Equatable, Identifiable {
         commentsPreview = container.decodeLossyArray([ReleaseComment].self, forKey: .commentsPreview)
         collectionsPreview = container.decodeLossyArray([CollectionPreview].self, forKey: .collectionsPreview)
         releaseVideosPreview = container.decodeLossyArray([ReleaseVideo].self, forKey: .releaseVideosPreview)
+            ?? dynamic.decodeLossyArray([ReleaseVideo].self, forKey: AnyCodingKey("release_videos_preview"))
         watchDynamics = container.decodeLossyArray([ProfileWatchDynamic].self, forKey: .watchDynamics)
 
         isOnline = container.decodeLossyBool(forKey: .isOnline)
@@ -236,15 +237,6 @@ struct CollectionPreview: Codable, Equatable, Identifiable {
     let favoriteCount: Int?
     let commentCount: Int64?
     let releaseCount: Int?
-}
-
-struct ReleaseVideo: Codable, Equatable, Identifiable {
-    let id: Int64?
-    let title: String?
-    let description: String?
-    let image: String?
-    let url: String?
-    let release: Release?
 }
 
 struct FlexibleString: Codable, Equatable {

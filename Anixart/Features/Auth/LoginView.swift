@@ -6,6 +6,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var output = ""
     @State private var isRunning = false
+    @FocusState private var focusedField: LoginField?
 
     var body: some View {
         Form {
@@ -13,7 +14,20 @@ struct LoginView: View {
                 TextField("Логин или email", text: $login)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .focused($focusedField, equals: .login)
+                    .submitLabel(.next)
+                    .onSubmit {
+                        focusedField = .password
+                    }
                 SecureField("Пароль", text: $password)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        guard !isRunning else { return }
+                        Task { await signIn() }
+                    }
 
                 DebugRunButton(title: "Войти", systemImage: "arrow.right.circle", isRunning: isRunning) {
                     Task { await signIn() }
@@ -57,4 +71,9 @@ struct LoginView: View {
             appState.refreshTokenStatus()
         }
     }
+}
+
+private enum LoginField: Hashable {
+    case login
+    case password
 }

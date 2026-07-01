@@ -55,6 +55,14 @@ struct SettingsView: View {
                 .disabled(appState.session?.profileId == nil && !appState.config.isMockMode)
             }
 
+            Section("Источники") {
+                Toggle("Показывать официальные источники", isOn: $appState.config.isOfficialStreamingPlatformsEnabled)
+
+                Text("Официальные платформы будут отображаться в меню «Озвучка» над сторонними озвучками.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Разработка") {
                 NavigationLink {
                     DeveloperToolsView()

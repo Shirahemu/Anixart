@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ListsView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedTab: ProfileListTab = .favorites
+    @State private var selectedTab: ListsTab = .collections
     @State private var releases: [Release] = []
     @State private var output = ""
     @State private var isLoading = false
@@ -12,10 +12,24 @@ struct ListsView: View {
     @State private var didLoad = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            tabs
+
+            switch selectedTab {
+            case .collections:
+                CollectionsHubView()
+            case .history:
+                historyPlaceholder
+            case .favorites, .watching, .planned, .completed, .holdOn, .dropped:
+                releaseList
+            }
+        }
+        .navigationTitle("Списки")
+    }
+
+    private var releaseList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                tabs
-
                 if !appState.hasToken && !appState.config.isMockMode {
                     ContentUnavailableView("Нужен вход", systemImage: "person.crop.circle.badge.exclamationmark", description: Text("Войдите, чтобы загрузить списки профиля."))
                 } else if isLoading && releases.isEmpty {
@@ -38,17 +52,13 @@ struct ListsView: View {
             }
             .padding()
         }
-        .swipeNavigation(items: ProfileListTab.allCases, selected: $selectedTab) { tab in
-            handleTabChange(tab, source: "swipe")
-        }
-        .navigationTitle("Списки")
         .refreshable {
             await reload()
         }
         .task {
-            guard !didLoad else { return }
+            guard !didLoad, let tab = selectedTab.releaseTab else { return }
             didLoad = true
-            applyCachedList(for: selectedTab)
+            applyCachedList(for: tab)
             await reload()
         }
     }
@@ -56,25 +66,39 @@ struct ListsView: View {
     private var tabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(ProfileListTab.allCases) { tab in
+                ForEach(ListsTab.allCases) { tab in
                     Button {
-                        handleTabChange(tab, source: "tap")
+                        handleTabChange(tab)
                     } label: {
                         Text(tab.title)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(selectedTab == tab ? .white : .primary)
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .frame(minHeight: 44)
                             .background(selectedTab == tab ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
+        .background(Color(.systemGroupedBackground))
     }
 
-    private func handleTabChange(_ tab: ProfileListTab, source: String) {
-        guard selectedTab != tab || source == "swipe" else { return }
+    private var historyPlaceholder: some View {
+        ContentUnavailableView(
+            "История",
+            systemImage: "clock",
+            description: Text("Раздел будет добавлен позже.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private func handleTabChange(_ tab: ListsTab) {
+        guard selectedTab != tab else { return }
         let oldTab = selectedTab
         selectedTab = tab
         appState.diagnosticsLogger.log(level: .info, category: .navigation, message: "Lists tab selected", metadata: [
@@ -82,10 +106,12 @@ struct ListsView: View {
             "oldTab": oldTab.title,
             "newTab": tab.title,
             "tab": tab.title,
-            "status": tab.status?.rawValue.description ?? "-",
-            "tab_change_source": source
+            "status": tab.releaseTab?.status?.rawValue.description ?? "-",
+            "tab_change_source": "tap"
         ])
-        applyCachedList(for: tab)
+        guard let releaseTab = tab.releaseTab else { return }
+        didLoad = true
+        applyCachedList(for: releaseTab)
         Task { await reload() }
     }
 
@@ -107,19 +133,21 @@ struct ListsView: View {
     }
 
     private func reload() async {
+        guard selectedTab.releaseTab != nil else { return }
         page = 0
         canLoadMore = true
         await loadPage(reset: true)
     }
 
     private func loadMoreIfNeeded() async {
+        guard selectedTab.releaseTab != nil else { return }
         guard canLoadMore, !isLoading, !isLoadingMore else { return }
         page += 1
         await loadPage(reset: false)
     }
 
     private func loadPage(reset: Bool) async {
-        let tab = selectedTab
+        guard let tab = selectedTab.releaseTab else { return }
         let requestPage = page
         let hadVisibleData = !releases.isEmpty
         if reset {
@@ -144,7 +172,7 @@ struct ListsView: View {
             ])
             let response = try await service.releases(tab: tab, page: requestPage)
             let newReleases = newestFirstIfTimestamped(response.content ?? [])
-            guard tab == selectedTab else { return }
+            guard tab == selectedTab.releaseTab else { return }
             releases = reset ? newReleases : uniqueReleases(releases + newReleases)
             if reset {
                 appState.dataCache.storeListFeed(newReleases, for: tab)
@@ -198,7 +226,7 @@ struct ListsView: View {
             let response = try await service.releases(tab: tab, page: 1)
             let nextPage = newestFirstIfTimestamped(response.content ?? [])
             let combined = uniqueReleases(firstPage + nextPage)
-            if tab == selectedTab {
+            if tab == selectedTab.releaseTab {
                 releases = combined
                 page = max(page, 1)
                 canLoadMore = !nextPage.isEmpty && 2 < (response.totalPageCount ?? Int.max)
@@ -236,5 +264,58 @@ struct ListsView: View {
             result.append(release)
         }
         return result
+    }
+}
+
+private enum ListsTab: Hashable, CaseIterable, Identifiable {
+    case collections
+    case history
+    case favorites
+    case watching
+    case planned
+    case completed
+    case holdOn
+    case dropped
+
+    var id: String { title }
+
+    var title: String {
+        switch self {
+        case .collections:
+            return "Коллекции"
+        case .history:
+            return "История"
+        case .favorites:
+            return "Избранное"
+        case .watching:
+            return "Смотрю"
+        case .planned:
+            return "В планах"
+        case .completed:
+            return "Просмотрено"
+        case .holdOn:
+            return "Отложено"
+        case .dropped:
+            return "Брошено"
+        }
+    }
+
+    var releaseTab: ProfileListTab? {
+        switch self {
+        case .collections, .history:
+            return nil
+        case .favorites:
+            return .favorites
+        case .watching:
+            return .watching
+        case .planned:
+            return .planned
+        case .completed:
+            return .completed
+        case .holdOn:
+            return .holdOn
+        case .dropped:
+            return .dropped
+        }
     }
 }

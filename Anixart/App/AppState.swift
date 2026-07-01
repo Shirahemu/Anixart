@@ -17,7 +17,8 @@ final class AppState: ObservableObject {
                 "diagnosticsVerbose": config.isDiagnosticsVerbose ? "true" : "false",
                 "fullTrace": config.isFullTraceEnabled ? "true" : "false",
                 "preferWebViewForIframe": config.isPreferWebViewForIframe ? "true" : "false",
-                "directParseBeforeWebView": config.isDirectParseBeforeWebViewEnabled ? "true" : "false"
+                "directParseBeforeWebView": config.isDirectParseBeforeWebViewEnabled ? "true" : "false",
+                "officialStreamingPlatforms": config.isOfficialStreamingPlatformsEnabled ? "true" : "false"
             ])
         }
     }

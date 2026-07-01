@@ -7,12 +7,6 @@ import UIKit
 struct KeyboardDismissOnTapModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    Self.dismissKeyboard()
-                }
-            )
     }
 
     static func dismissKeyboard() {

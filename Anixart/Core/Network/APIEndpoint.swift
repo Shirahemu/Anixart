@@ -291,6 +291,142 @@ struct APIEndpoint: Equatable {
         APIEndpoint(name: "release.random", method: .get, pathTemplate: "release/random", queryItems: ["extended_mode": extendedMode ? "true" : "false"], requiresToken: true)
     }
 
+    static func releaseStreamingPlatforms(releaseId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "release.streaming.platforms",
+            method: .get,
+            pathTemplate: "release/streaming/platform/{releaseId}/",
+            pathParameters: ["releaseId": "\(releaseId)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoCategories() -> APIEndpoint {
+        APIEndpoint(name: "releaseVideo.categories", method: .get, pathTemplate: "video/release/categories")
+    }
+
+    static func releaseVideosMain(releaseId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideo.main",
+            method: .get,
+            pathTemplate: "video/release/{releaseId}",
+            pathParameters: ["releaseId": "\(releaseId)"]
+        )
+    }
+
+    static func releaseVideos(releaseId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideo.page",
+            method: .get,
+            pathTemplate: "video/release/{releaseId}/{page}",
+            pathParameters: ["releaseId": "\(releaseId)", "page": "\(page)"]
+        )
+    }
+
+    static func releaseVideosByCategory(releaseId: Int64, categoryId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideo.category",
+            method: .get,
+            pathTemplate: "video/release/{releaseId}/category/{categoryId}/{page}",
+            pathParameters: ["releaseId": "\(releaseId)", "categoryId": "\(categoryId)", "page": "\(page)"]
+        )
+    }
+
+    static func profileReleaseVideos(profileId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideo.profile",
+            method: .get,
+            pathTemplate: "video/profile/{p_id}/{page}",
+            pathParameters: ["p_id": "\(profileId)", "page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoFavoriteAdd(videoId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoFavorite.add",
+            method: .get,
+            pathTemplate: "releaseVideoFavorite/add/{r_id}",
+            pathParameters: ["r_id": "\(videoId)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoFavoriteDelete(videoId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoFavorite.delete",
+            method: .get,
+            pathTemplate: "releaseVideoFavorite/delete/{r_id}",
+            pathParameters: ["r_id": "\(videoId)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoFavorites(profileId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoFavorite.all",
+            method: .get,
+            pathTemplate: "releaseVideoFavorite/all/{p_id}/{page}",
+            pathParameters: ["p_id": "\(profileId)", "page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoAppeal(releaseId: Int64, title: String, categoryId: Int64, url: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideo.appeal",
+            method: .post,
+            pathTemplate: "video/release/{releaseId}/appeal",
+            pathParameters: ["releaseId": "\(releaseId)"],
+            body: releaseVideoAppealBody(releaseId: releaseId, title: title, categoryId: categoryId, url: url),
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoAppealAdd(releaseId: Int64, title: String, categoryId: Int64, url: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoAppeal.add",
+            method: .post,
+            pathTemplate: "video/appeal/add",
+            body: releaseVideoAppealBody(releaseId: releaseId, title: title, categoryId: categoryId, url: url),
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoAppeals(page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoAppeal.profile",
+            method: .get,
+            pathTemplate: "video/appeal/profile/{page}",
+            pathParameters: ["page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func releaseVideoAppealsLast() -> APIEndpoint {
+        APIEndpoint(name: "releaseVideoAppeal.profile.last", method: .get, pathTemplate: "video/appeal/profile/last", requiresToken: true)
+    }
+
+    static func releaseVideoAppealDelete(appealId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "releaseVideoAppeal.delete",
+            method: .post,
+            pathTemplate: "video/appeal/delete/{appealId}",
+            pathParameters: ["appealId": "\(appealId)"],
+            requiresToken: true
+        )
+    }
+
+    static func relatedReleases(relatedId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "related.releases",
+            method: .get,
+            pathTemplate: "related/{relatedId}/{page}",
+            pathParameters: ["relatedId": "\(relatedId)", "page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
     static func releaseVoteAdd(id: Int64, vote: Int) -> APIEndpoint {
         APIEndpoint(name: "release.vote.add", method: .get, pathTemplate: "release/vote/add/{r_id}/{vote}", pathParameters: ["r_id": "\(id)", "vote": "\(vote)"], requiresToken: true)
     }
@@ -401,8 +537,289 @@ struct APIEndpoint: Equatable {
         )
     }
 
+    static func collection(id: Int64) -> APIEndpoint {
+        APIEndpoint(name: "collection.get", method: .get, pathTemplate: "collection/{id}", pathParameters: ["id": "\(id)"], requiresToken: true)
+    }
+
+    static func collectionAll(page: Int, previousPage: Int, where whereValue: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.all",
+            method: .get,
+            pathTemplate: "collection/all/{page}",
+            pathParameters: ["page": "\(page)"],
+            queryItems: [
+                "previous_page": "\(previousPage)",
+                "where": "\(whereValue)",
+                "sort": "\(sort)"
+            ],
+            requiresToken: true
+        )
+    }
+
+    static func collectionAllProfile(profileId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.all.profile",
+            method: .get,
+            pathTemplate: "collection/all/profile/{p_id}/{page}",
+            pathParameters: ["p_id": "\(profileId)", "page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionAllRelease(releaseId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.all.release",
+            method: .get,
+            pathTemplate: "collection/all/release/{r_id}/{page}",
+            pathParameters: ["r_id": "\(releaseId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionReleases(collectionId: Int64, page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.releases",
+            method: .get,
+            pathTemplate: "collection/{id}/releases/{page}",
+            pathParameters: ["id": "\(collectionId)", "page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionReport(collectionId: Int64, message: String, reason: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.report",
+            method: .post,
+            pathTemplate: "collection/report/{id}",
+            pathParameters: ["id": "\(collectionId)"],
+            body: .json(.object([
+                "message": .string(message),
+                "reason": .number(Double(reason))
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyCreate(title: String, description: String, isPrivate: Bool, releaseIds: [Int64]) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.create",
+            method: .post,
+            pathTemplate: "collectionMy/create",
+            body: collectionCreateEditBody(title: title, description: description, isPrivate: isPrivate, releaseIds: releaseIds),
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyDelete(collectionId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.delete",
+            method: .get,
+            pathTemplate: "collectionMy/delete/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyEdit(collectionId: Int64, title: String, description: String, isPrivate: Bool, releaseIds: [Int64]) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.edit",
+            method: .post,
+            pathTemplate: "collectionMy/edit/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            body: collectionCreateEditBody(title: title, description: description, isPrivate: isPrivate, releaseIds: releaseIds),
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyEditImage(collectionId: Int64, imageData: Data, fileName: String, mimeType: String, name: String) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.editImage",
+            method: .post,
+            pathTemplate: "collectionMy/editImage/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            body: .multipart(MultipartBody(
+                fields: ["name": name],
+                files: [MultipartFile(fieldName: "image", fileName: fileName, mimeType: mimeType, data: imageData)]
+            )),
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyReleaseAdd(collectionId: Int64, releaseId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.release.add",
+            method: .get,
+            pathTemplate: "collectionMy/release/add/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            queryItems: ["release_id": "\(releaseId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionMyReleases(collectionId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.my.releases",
+            method: .get,
+            pathTemplate: "collectionMy/{id}/releases",
+            pathParameters: ["id": "\(collectionId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionFavoriteAdd(collectionId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.favorite.add",
+            method: .get,
+            pathTemplate: "collectionFavorite/add/{id}",
+            pathParameters: ["id": "\(collectionId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionFavoriteDelete(collectionId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.favorite.delete",
+            method: .get,
+            pathTemplate: "collectionFavorite/delete/{id}",
+            pathParameters: ["id": "\(collectionId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionFavoriteAll(page: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.favorite.all",
+            method: .get,
+            pathTemplate: "collectionFavorite/all/{page}",
+            pathParameters: ["page": "\(page)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentAdd(collectionId: Int64, parentCommentId: Int64?, replyToProfileId: Int64?, message: String, spoiler: Bool) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.add",
+            method: .post,
+            pathTemplate: "collection/comment/add/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            body: .json(.object([
+                "parentCommentId": parentCommentId.map { .number(Double($0)) } ?? .null,
+                "replyToProfileId": replyToProfileId.map { .number(Double($0)) } ?? .null,
+                "message": .string(message),
+                "spoiler": .bool(spoiler)
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentFirst(collectionId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.first",
+            method: .get,
+            pathTemplate: "collection/comment/{collectionId}",
+            pathParameters: ["collectionId": "\(collectionId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionComments(collectionId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.all",
+            method: .get,
+            pathTemplate: "collection/comment/all/{collectionId}/{page}",
+            pathParameters: ["collectionId": "\(collectionId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentDelete(commentId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.delete",
+            method: .get,
+            pathTemplate: "collection/comment/delete/{commentId}",
+            pathParameters: ["commentId": "\(commentId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentEdit(commentId: Int64, message: String, spoiler: Bool) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.edit",
+            method: .post,
+            pathTemplate: "collection/comment/edit/{commentId}",
+            pathParameters: ["commentId": "\(commentId)"],
+            body: .json(.object([
+                "message": .string(message),
+                "spoiler": .bool(spoiler)
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentProcess(commentId: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.process",
+            method: .post,
+            pathTemplate: "collection/comment/process/{commentId}",
+            pathParameters: ["commentId": "\(commentId)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentsProfile(profileId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.all.profile",
+            method: .get,
+            pathTemplate: "collection/comment/all/profile/{p_id}/{page}",
+            pathParameters: ["p_id": "\(profileId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentReplies(commentId: Int64, page: Int, sort: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.replies",
+            method: .post,
+            pathTemplate: "collection/comment/replies/{commentId}/{page}",
+            pathParameters: ["commentId": "\(commentId)", "page": "\(page)"],
+            queryItems: ["sort": "\(sort)"],
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentReport(commentId: Int64, message: String, reason: Int64) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.report",
+            method: .post,
+            pathTemplate: "collection/comment/report/{commentId}",
+            pathParameters: ["commentId": "\(commentId)"],
+            body: .json(.object([
+                "message": .string(message),
+                "reason": .number(Double(reason))
+            ])),
+            requiresToken: true
+        )
+    }
+
+    static func collectionCommentVote(commentId: Int64, vote: Int) -> APIEndpoint {
+        APIEndpoint(
+            name: "collection.comment.vote",
+            method: .get,
+            pathTemplate: "collection/comment/vote/{commentId}/{vote}",
+            pathParameters: ["commentId": "\(commentId)", "vote": "\(vote)"],
+            requiresToken: true
+        )
+    }
+
     static func episodeTypes(releaseId: Int64) -> APIEndpoint {
         APIEndpoint(name: "episode.types", method: .get, pathTemplate: "episode/{releaseId}", pathParameters: ["releaseId": "\(releaseId)"])
+    }
+
+    static func allEpisodeTypes() -> APIEndpoint {
+        APIEndpoint(name: "type.all", method: .get, pathTemplate: "type/all", requiresToken: true)
     }
 
     static func episodeSources(releaseId: Int64, typeId: Int64) -> APIEndpoint {
@@ -446,6 +863,29 @@ struct APIEndpoint: Equatable {
 
     static func searchProfiles(page: Int, query: String) -> APIEndpoint {
         APIEndpoint(name: "search.profiles", method: .post, pathTemplate: "search/profiles/{page}", pathParameters: ["page": "\(page)"], body: .json(.object(["query": .string(query)])), requiresToken: true)
+    }
+
+    static func searchCollections(page: Int, query: String) -> APIEndpoint {
+        APIEndpoint(name: "search.collections", method: .post, pathTemplate: "search/collections/{page}", pathParameters: ["page": "\(page)"], body: .json(.object(["query": .string(query)])), requiresToken: true)
+    }
+
+    static func searchFavoriteCollections(page: Int, query: String) -> APIEndpoint {
+        APIEndpoint(name: "search.favoriteCollections", method: .post, pathTemplate: "search/favoriteCollections/{page}", pathParameters: ["page": "\(page)"], body: .json(.object(["query": .string(query)])), requiresToken: true)
+    }
+
+    static func searchProfileCollections(profileId: Int64, page: Int, releaseId: Int64?, query: String) -> APIEndpoint {
+        var endpoint = APIEndpoint(
+            name: "search.profileCollections",
+            method: .post,
+            pathTemplate: "search/profileCollections/{p_id}/{page}",
+            pathParameters: ["p_id": "\(profileId)", "page": "\(page)"],
+            body: .json(.object(["query": .string(query)])),
+            requiresToken: true
+        )
+        if let releaseId {
+            endpoint.queryItems["release_id"] = "\(releaseId)"
+        }
+        return endpoint
     }
 
     static func filter(page: Int, body: JSONValue = .object([:])) -> APIEndpoint {
@@ -508,6 +948,24 @@ struct APIEndpoint: Equatable {
 
     static func profileListDelete(status: Int, releaseId: Int64) -> APIEndpoint {
         APIEndpoint(name: "profile.list.delete", method: .get, pathTemplate: "profile/list/delete/{status}/{r_id}", pathParameters: ["status": "\(status)", "r_id": "\(releaseId)"], requiresToken: true)
+    }
+
+    private static func collectionCreateEditBody(title: String, description: String, isPrivate: Bool, releaseIds: [Int64]) -> Body {
+        .json(.object([
+            "title": .string(title),
+            "description": .string(description),
+            "is_private": .bool(isPrivate),
+            "releases": .array(releaseIds.map { .number(Double($0)) })
+        ]))
+    }
+
+    private static func releaseVideoAppealBody(releaseId: Int64, title: String, categoryId: Int64, url: String) -> Body {
+        .json(.object([
+            "releaseId": .number(Double(releaseId)),
+            "title": .string(title),
+            "categoryId": .number(Double(categoryId)),
+            "url": .string(url)
+        ]))
     }
 }
 

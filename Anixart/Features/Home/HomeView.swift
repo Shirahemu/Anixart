@@ -15,11 +15,14 @@ struct HomeView: View {
     @State private var searchOutput = ""
     @State private var isSearchLoading = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var customFilterSettings = HomeCustomFilterSettings.load()
+    @State private var isShowingCustomFilter = false
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 categoryTabs
+                customFilterToolbar
 
                 if activeLoading && activeReleases.isEmpty {
                     ProgressView(isSearchActive ? "Ищем..." : "Загрузка...")
@@ -30,6 +33,19 @@ struct HomeView: View {
                 if !activeReleases.isEmpty {
                     ReleaseGridView(releases: activeReleases) { release in
                         Task { await loadMoreIfNeeded(current: release) }
+                    }
+                } else if selectedCategory == .my && !isSearchActive && !customFilterSettings.hasActiveFilters && !activeLoading {
+                    mySetupEmptyState
+                } else if selectedCategory == .my && !isSearchActive && customFilterSettings.hasActiveFilters && !activeLoading {
+                    ContentUnavailableView {
+                        Label("Моя вкладка", systemImage: "line.3.horizontal.decrease.circle")
+                    } description: {
+                        Text("К сожалению, не удалось ничего найти по указанным фильтрам")
+                    } actions: {
+                        Button("Настроить") {
+                            openCustomFilter()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 } else if !activeLoading {
                     ContentUnavailableView(
@@ -53,9 +69,6 @@ struct HomeView: View {
             }
             .padding()
         }
-        .swipeNavigation(items: HomeCategory.allCases, selected: $selectedCategory) { category in
-            handleCategoryChange(category, source: "swipe")
-        }
         .navigationTitle("Главная")
         .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Поиск аниме")
         .onSubmit(of: .search) {
@@ -75,10 +88,23 @@ struct HomeView: View {
         .task {
             guard !didLoad else { return }
             didLoad = true
+            customFilterSettings = HomeCustomFilterSettings.load()
             applyCachedHomeFeed(for: selectedCategory)
             if releases.isEmpty {
                 await loadSelectedCategory()
             }
+        }
+        .sheet(isPresented: $isShowingCustomFilter) {
+            HomeAdvancedFilterView(
+                settings: customFilterSettings,
+                onApply: { settings in
+                    applyCustomFilter(settings)
+                },
+                onReset: {
+                    resetCustomFilter()
+                }
+            )
+            .environmentObject(appState)
         }
     }
 
@@ -89,16 +115,68 @@ struct HomeView: View {
                     Button {
                         handleCategoryChange(category, source: "tap")
                     } label: {
-                        Text(category.title)
+                        Text(title(for: category))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(selectedCategory == category ? .white : .primary)
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .frame(minHeight: 44)
                             .background(selectedCategory == category ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var customFilterToolbar: some View {
+        if selectedCategory == .my && !isSearchActive {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Button {
+                        openCustomFilter()
+                    } label: {
+                        Label(customFilterSettings.hasActiveFilters ? "Изменить фильтр" : "Настроить", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if customFilterSettings.hasActiveFilters {
+                        Button("Сбросить", role: .destructive) {
+                            resetCustomFilter()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                if !customFilterSettings.summaryItems.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(customFilterSettings.summaryItems, id: \.self) { item in
+                                Text(item)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var mySetupEmptyState: some View {
+        ContentUnavailableView {
+            Label("Моя вкладка", systemImage: "line.3.horizontal.decrease.circle")
+        } description: {
+            Text("Настройте фильтр, чтобы получить персональную ленту.")
+        } actions: {
+            Button("Настроить") {
+                openCustomFilter()
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 
@@ -126,7 +204,46 @@ struct HomeView: View {
         if isSearchActive {
             return searchOutput.isEmpty ? "По запросу «\(trimmedSearchQuery)» ничего нет." : searchOutput
         }
+        if selectedCategory == .my && customFilterSettings.hasActiveFilters {
+            return "К сожалению, не удалось ничего найти по указанным фильтрам"
+        }
         return output.isEmpty ? "Обновите ленту или выберите другую вкладку." : output
+    }
+
+    private func title(for category: HomeCategory) -> String {
+        category == .my ? customFilterSettings.displayTitle : category.title
+    }
+
+    private func openCustomFilter() {
+        customFilterSettings = HomeCustomFilterSettings.load()
+        appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home custom filter opened", metadata: [
+            "activeFilterCount": "\(customFilterSettings.summaryItems.count)"
+        ])
+        isShowingCustomFilter = true
+    }
+
+    private func applyCustomFilter(_ settings: HomeCustomFilterSettings) {
+        customFilterSettings = settings
+        appState.dataCache.clearHomeFeed(for: .my)
+        selectedCategory = .my
+        releases = []
+        loadedPage = -1
+        canLoadMore = true
+        output = ""
+        Task { await loadSelectedCategory(forceRefresh: true) }
+    }
+
+    private func resetCustomFilter() {
+        HomeCustomFilterSettings.reset()
+        customFilterSettings = .empty
+        appState.dataCache.clearHomeFeed(for: .my)
+        appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home custom filter reset", metadata: [:])
+        if selectedCategory == .my {
+            releases = []
+            loadedPage = -1
+            canLoadMore = true
+            output = ""
+        }
     }
 
     private func handleSearchQueryChange(_ value: String) {
@@ -181,7 +298,7 @@ struct HomeView: View {
     }
 
     private func handleCategoryChange(_ category: HomeCategory, source: String) {
-        guard selectedCategory != category || source == "swipe" else { return }
+        guard selectedCategory != category else { return }
         let oldCategory = selectedCategory
         selectedCategory = category
         appState.diagnosticsLogger.log(level: .info, category: .home, message: "Home tab selected", metadata: [
@@ -220,6 +337,13 @@ struct HomeView: View {
     }
 
     private func loadSelectedCategory(forceRefresh: Bool = false) async {
+        if selectedCategory == .my && !customFilterSettings.hasActiveFilters {
+            releases = []
+            loadedPage = -1
+            canLoadMore = false
+            output = ""
+            return
+        }
         if !forceRefresh && !releases.isEmpty {
             return
         }
@@ -227,10 +351,6 @@ struct HomeView: View {
     }
 
     private func refreshHome() async {
-        if selectedCategory != .latest {
-            selectedCategory = .latest
-            applyCachedHomeFeed(for: .latest)
-        }
         await loadSelectedCategory(forceRefresh: true)
     }
 
@@ -258,6 +378,14 @@ struct HomeView: View {
 
     private func loadHomePage(_ page: Int, reset: Bool, forceRefresh: Bool = false) async {
         let category = selectedCategory
+        if category == .my && !customFilterSettings.hasActiveFilters {
+            releases = []
+            loadedPage = -1
+            canLoadMore = false
+            output = ""
+            return
+        }
+        let filterBody = category == .my ? customFilterSettings.toFilterRequestBody() : category.filterBody
         let hadVisibleData = !releases.isEmpty
         if reset {
             isLoading = true
@@ -274,18 +402,23 @@ struct HomeView: View {
 
         do {
             let service = HomeFeedService(apiClient: appState.makeAPIClient())
-            appState.diagnosticsLogger.log(level: .info, category: .home, message: reset ? "Home feed request started" : "Home next page load started", metadata: [
-                "category": category.title,
-                "endpoint": "filter/\(page)",
-                "page": "\(page)",
-                "filterBody": category.filterBody.diagnosticDescription,
-                "statusId": category.statusId.map(String.init) ?? "-",
-                "categoryId": "-",
-                "cacheVisible": hadVisibleData ? "true" : "false",
-                "forceRefresh": forceRefresh ? "true" : "false"
-            ])
+            let startedMessage = category == .my ? "Home custom filter request started" : (reset ? "Home feed request started" : "Home next page load started")
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: startedMessage, metadata: homeRequestMetadata(
+                category: category,
+                page: page,
+                filterBody: filterBody,
+                extra: [
+                    "cacheVisible": hadVisibleData ? "true" : "false",
+                    "forceRefresh": forceRefresh ? "true" : "false"
+                ]
+            ))
 
-            let result = try await service.feed(for: category, page: page)
+            let result: HomeFeedResult
+            if category == .my {
+                result = try await service.feed(filterBody: filterBody, category: category, page: page)
+            } else {
+                result = try await service.feed(for: category, page: page)
+            }
             guard category == selectedCategory else { return }
 
             if reset {
@@ -312,25 +445,26 @@ struct HomeView: View {
                 for: category
             )
             if releases.isEmpty {
-                output = "Ответ получен, но релизы не декодированы."
+                output = category == .my ? "К сожалению, не удалось ничего найти по указанным фильтрам" : "Ответ получен, но релизы не декодированы."
             } else if reset {
                 output = ""
             }
-            appState.diagnosticsLogger.log(level: .info, category: .home, message: reset ? "Home feed request succeeded" : "Home next page load succeeded", metadata: [
-                "category": category.title,
-                "endpoint": "filter/\(page)",
-                "page": "\(page)",
-                "rawCount": "\(result.rawCount)",
-                "resultCount": "\(result.releases.count)",
-                "visibleCount": "\(releases.count)",
-                "droppedCount": "\(result.droppedCount)",
-                "episodeLastUpdateCount": "\(result.hasEpisodeLastUpdateCount)",
-                "firstItemsRaw": result.firstItemsBefore.joined(separator: " | "),
-                "firstItems": result.firstItemsAfter.joined(separator: " | "),
-                "statusId": category.statusId.map(String.init) ?? "-",
-                "categoryId": "-",
-                "canLoadMore": canLoadMore ? "true" : "false"
-            ])
+            let succeededMessage = category == .my ? "Home custom filter request succeeded" : (reset ? "Home feed request succeeded" : "Home next page load succeeded")
+            appState.diagnosticsLogger.log(level: .info, category: .home, message: succeededMessage, metadata: homeRequestMetadata(
+                category: category,
+                page: page,
+                filterBody: filterBody,
+                extra: [
+                    "rawCount": "\(result.rawCount)",
+                    "resultCount": "\(result.releases.count)",
+                    "visibleCount": "\(releases.count)",
+                    "droppedCount": "\(result.droppedCount)",
+                    "episodeLastUpdateCount": "\(result.hasEpisodeLastUpdateCount)",
+                    "firstItemsRaw": result.firstItemsBefore.joined(separator: " | "),
+                    "firstItems": result.firstItemsAfter.joined(separator: " | "),
+                    "canLoadMore": canLoadMore ? "true" : "false"
+                ]
+            ))
         } catch {
             if error.isUserInvisibleCancellation {
                 appState.diagnosticsLogger.log(level: .debug, category: .home, message: reset ? "Home feed request cancelled" : "Home next page load cancelled", metadata: [
@@ -343,13 +477,38 @@ struct HomeView: View {
                 releases = []
             }
             output = DebugResultFormatter.error(error)
-            appState.diagnosticsLogger.log(level: .error, category: .home, message: reset ? "Home feed request failed" : "Home next page load failed", metadata: [
-                "category": category.title,
-                "endpoint": "filter/\(page)",
-                "page": "\(page)",
-                "error": output,
-                "keptVisibleData": hadVisibleData ? "true" : "false"
-            ])
+            let failedMessage = category == .my ? "Home custom filter request failed" : (reset ? "Home feed request failed" : "Home next page load failed")
+            appState.diagnosticsLogger.log(level: .error, category: .home, message: failedMessage, metadata: homeRequestMetadata(
+                category: category,
+                page: page,
+                filterBody: filterBody,
+                extra: [
+                    "error": output,
+                    "keptVisibleData": hadVisibleData ? "true" : "false"
+                ]
+            ))
         }
+    }
+
+    private func homeRequestMetadata(category: HomeCategory, page: Int, filterBody: JSONValue, extra: [String: String]) -> [String: String] {
+        var metadata: [String: String] = [
+            "category": category.title,
+            "endpoint": "filter/\(page)",
+            "page": "\(page)",
+            "filterBody": filterBody.diagnosticDescription,
+            "statusId": category.statusId.map(String.init) ?? "-",
+            "categoryId": "-"
+        ]
+
+        if category == .my {
+            metadata["activeFilterCount"] = "\(customFilterSettings.summaryItems.count)"
+            metadata["genreCount"] = "\(customFilterSettings.genres.count)"
+            metadata["typeCount"] = "\(customFilterSettings.typeIds.count)"
+            metadata["profileListExclusionCount"] = "\(customFilterSettings.profileListExclusions.count)"
+            metadata["ageRatingCount"] = "\(customFilterSettings.ageRatings.count)"
+        }
+
+        metadata.merge(extra) { _, new in new }
+        return metadata
     }
 }

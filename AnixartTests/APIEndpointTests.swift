@@ -59,10 +59,21 @@ final class APIEndpointTests: XCTestCase {
     }
 
     func testHomeFilterMapping() {
+        HomeCustomFilterSettings.reset()
         XCTAssertEqual(HomeCategory.latest.filterBody.diagnosticDescription, "{}")
         XCTAssertTrue(HomeCategory.ongoing.filterBody.diagnosticDescription.contains("status_id:2.0"))
         XCTAssertTrue(HomeCategory.announced.filterBody.diagnosticDescription.contains("status_id:3.0"))
         XCTAssertTrue(HomeCategory.completed.filterBody.diagnosticDescription.contains("status_id:1.0"))
+    }
+
+    func testAllEpisodeTypesEndpointMatchesAndroid() {
+        let endpoint = APIEndpoint.allEpisodeTypes()
+
+        XCTAssertEqual(endpoint.name, "type.all")
+        XCTAssertEqual(endpoint.method, .get)
+        XCTAssertEqual(endpoint.resolvedPath, "type/all")
+        XCTAssertTrue(endpoint.requiresToken)
+        XCTAssertEqual(endpoint.body, .none)
     }
 
     func testReleaseCommentEndpointsMatchAndroidPaths() {
@@ -141,6 +152,69 @@ final class APIEndpointTests: XCTestCase {
         XCTAssertEqual(endpoint.body, .none)
     }
 
+    func testReleaseStreamingPlatformsEndpointMatchesAndroid() {
+        let endpoint = APIEndpoint.releaseStreamingPlatforms(releaseId: 1001)
+
+        XCTAssertEqual(endpoint.name, "release.streaming.platforms")
+        XCTAssertEqual(endpoint.method, .get)
+        XCTAssertEqual(endpoint.resolvedPath, "release/streaming/platform/1001/")
+        XCTAssertTrue(endpoint.requiresToken)
+        XCTAssertEqual(endpoint.body, .none)
+    }
+
+    func testReleaseVideoEndpointsMatchAndroidPaths() {
+        let endpoints: [(APIEndpoint, HTTPMethod, String, Bool)] = [
+            (.releaseVideoCategories(), .get, "video/release/categories", false),
+            (.releaseVideosMain(releaseId: 1001), .get, "video/release/1001", false),
+            (.releaseVideos(releaseId: 1001, page: 2), .get, "video/release/1001/2", false),
+            (.releaseVideosByCategory(releaseId: 1001, categoryId: 5, page: 3), .get, "video/release/1001/category/5/3", false),
+            (.profileReleaseVideos(profileId: 42, page: 1), .get, "video/profile/42/1", true),
+            (.releaseVideoFavoriteAdd(videoId: 77), .get, "releaseVideoFavorite/add/77", true),
+            (.releaseVideoFavoriteDelete(videoId: 77), .get, "releaseVideoFavorite/delete/77", true),
+            (.releaseVideoFavorites(profileId: 42, page: 4), .get, "releaseVideoFavorite/all/42/4", true),
+            (.releaseVideoAppeals(page: 2), .get, "video/appeal/profile/2", true),
+            (.releaseVideoAppealsLast(), .get, "video/appeal/profile/last", true),
+            (.releaseVideoAppealDelete(appealId: 99), .post, "video/appeal/delete/99", true)
+        ]
+
+        for (endpoint, method, path, requiresToken) in endpoints {
+            XCTAssertEqual(endpoint.method, method)
+            XCTAssertEqual(endpoint.resolvedPath, path)
+            XCTAssertEqual(endpoint.requiresToken, requiresToken)
+        }
+    }
+
+    func testReleaseVideoAppealBodiesMatchAndroidRequest() {
+        let endpoint = APIEndpoint.releaseVideoAppeal(releaseId: 123, title: "Трейлер", categoryId: 5, url: "https://example.test/v")
+
+        XCTAssertEqual(endpoint.method, .post)
+        XCTAssertEqual(endpoint.resolvedPath, "video/release/123/appeal")
+        XCTAssertTrue(endpoint.requiresToken)
+        if case .json(let body) = endpoint.body {
+            XCTAssertEqual(body.diagnosticDescription, "{categoryId:5.0,releaseId:123.0,title:\"Трейлер\",url:\"https://example.test/v\"}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        let profileAdd = APIEndpoint.releaseVideoAppealAdd(releaseId: 123, title: "Трейлер", categoryId: 5, url: "https://example.test/v")
+        XCTAssertEqual(profileAdd.resolvedPath, "video/appeal/add")
+        if case .json(let body) = profileAdd.body {
+            XCTAssertEqual(body.diagnosticDescription, "{categoryId:5.0,releaseId:123.0,title:\"Трейлер\",url:\"https://example.test/v\"}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+    }
+
+    func testRelatedReleasesEndpointMatchesAndroid() {
+        let endpoint = APIEndpoint.relatedReleases(relatedId: 44, page: 2)
+
+        XCTAssertEqual(endpoint.name, "related.releases")
+        XCTAssertEqual(endpoint.method, .get)
+        XCTAssertEqual(endpoint.resolvedPath, "related/44/2")
+        XCTAssertTrue(endpoint.requiresToken)
+        XCTAssertEqual(endpoint.body, .none)
+    }
+
     func testHistoryEndpointsMatchAndroid() {
         let list = APIEndpoint.history(page: 2)
         XCTAssertEqual(list.method, .get)
@@ -159,6 +233,26 @@ final class APIEndpointTests: XCTestCase {
         XCTAssertEqual(add.resolvedPath, "history/add/123/45/6")
         XCTAssertTrue(add.requiresToken)
         XCTAssertEqual(add.body, .none)
+    }
+
+    func testEpisodeWatchEndpointMatchesAndroid() {
+        let endpoint = APIEndpoint.episodeWatch(releaseId: 10, sourceId: 20, position: 3)
+
+        XCTAssertEqual(endpoint.name, "episode.watch")
+        XCTAssertEqual(endpoint.method, .post)
+        XCTAssertEqual(endpoint.resolvedPath, "episode/watch/10/20/3")
+        XCTAssertTrue(endpoint.requiresToken)
+        XCTAssertEqual(endpoint.body, .none)
+    }
+
+    func testEpisodeUnwatchEndpointMatchesAndroid() {
+        let endpoint = APIEndpoint.episodeUnwatch(releaseId: 10, sourceId: 20, position: 3)
+
+        XCTAssertEqual(endpoint.name, "episode.unwatch")
+        XCTAssertEqual(endpoint.method, .post)
+        XCTAssertEqual(endpoint.resolvedPath, "episode/unwatch/10/20/3")
+        XCTAssertTrue(endpoint.requiresToken)
+        XCTAssertEqual(endpoint.body, .none)
     }
 
     func testProfileFriendEndpointsMatchAndroid() {
@@ -262,6 +356,124 @@ final class APIEndpointTests: XCTestCase {
             XCTAssertTrue(endpoint.body.diagnosticPreview.contains("image/avatar.jpg/image/jpeg/4 bytes"))
         } else {
             XCTFail("Expected multipart body")
+        }
+    }
+
+    func testCollectionMainEndpointsMatchAndroid() {
+        let all = APIEndpoint.collectionAll(page: 2, previousPage: 1, where: 0, sort: CollectionSort.popular.rawValue)
+        XCTAssertEqual(APIEndpoint.collection(id: 7001).resolvedPath, "collection/7001")
+        XCTAssertEqual(all.method, .get)
+        XCTAssertEqual(all.resolvedPath, "collection/all/2")
+        XCTAssertEqual(all.queryItems["previous_page"], "1")
+        XCTAssertEqual(all.queryItems["where"], "0")
+        XCTAssertEqual(all.queryItems["sort"], "1")
+        XCTAssertEqual(APIEndpoint.collectionAllProfile(profileId: 42, page: 3).resolvedPath, "collection/all/profile/42/3")
+        XCTAssertEqual(APIEndpoint.collectionAllRelease(releaseId: 1001, page: 4, sort: 2).resolvedPath, "collection/all/release/1001/4")
+        XCTAssertEqual(APIEndpoint.collectionAllRelease(releaseId: 1001, page: 4, sort: 2).queryItems["sort"], "2")
+        XCTAssertEqual(APIEndpoint.collectionReleases(collectionId: 7001, page: 5).resolvedPath, "collection/7001/releases/5")
+        XCTAssertTrue(all.requiresToken)
+    }
+
+    func testCollectionCreateEditBodiesIncludeAndroidKeys() {
+        let create = APIEndpoint.collectionMyCreate(title: "Название", description: "Описание", isPrivate: false, releaseIds: [1, 2])
+        let edit = APIEndpoint.collectionMyEdit(collectionId: 7001, title: "Правка", description: "", isPrivate: true, releaseIds: [])
+
+        XCTAssertEqual(create.resolvedPath, "collectionMy/create")
+        XCTAssertEqual(edit.resolvedPath, "collectionMy/edit/7001")
+
+        if case .json(let body) = create.body {
+            XCTAssertEqual(body.diagnosticDescription, "{description:\"Описание\",is_private:false,releases:[1.0,2.0],title:\"Название\"}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        if case .json(let body) = edit.body {
+            XCTAssertEqual(body.diagnosticDescription, "{description:\"\",is_private:true,releases:[],title:\"Правка\"}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+    }
+
+    func testCollectionMyAndFavoriteEndpointsMatchAndroid() {
+        XCTAssertEqual(APIEndpoint.collectionMyDelete(collectionId: 7001).resolvedPath, "collectionMy/delete/7001")
+        XCTAssertEqual(APIEndpoint.collectionMyReleaseAdd(collectionId: 7001, releaseId: 1001).resolvedPath, "collectionMy/release/add/7001")
+        XCTAssertEqual(APIEndpoint.collectionMyReleaseAdd(collectionId: 7001, releaseId: 1001).queryItems["release_id"], "1001")
+        XCTAssertEqual(APIEndpoint.collectionMyReleases(collectionId: 7001).resolvedPath, "collectionMy/7001/releases")
+        XCTAssertEqual(APIEndpoint.collectionFavoriteAdd(collectionId: 7001).resolvedPath, "collectionFavorite/add/7001")
+        XCTAssertEqual(APIEndpoint.collectionFavoriteDelete(collectionId: 7001).resolvedPath, "collectionFavorite/delete/7001")
+        XCTAssertEqual(APIEndpoint.collectionFavoriteAll(page: 2).resolvedPath, "collectionFavorite/all/2")
+    }
+
+    func testCollectionImageMultipartMetadata() {
+        let data = Data([1, 2, 3])
+        let endpoint = APIEndpoint.collectionMyEditImage(collectionId: 7001, imageData: data, fileName: "cover.png", mimeType: "image/png", name: "image")
+
+        XCTAssertEqual(endpoint.resolvedPath, "collectionMy/editImage/7001")
+        if case .multipart(let body) = endpoint.body {
+            XCTAssertEqual(body.fields["name"], "image")
+            XCTAssertEqual(body.files.first?.fieldName, "image")
+            XCTAssertEqual(body.files.first?.fileName, "cover.png")
+            XCTAssertEqual(body.files.first?.mimeType, "image/png")
+            XCTAssertEqual(body.files.first?.data.count, 3)
+        } else {
+            XCTFail("Expected multipart body")
+        }
+    }
+
+    func testCollectionCommentEndpointsAndBodiesMatchAndroid() {
+        XCTAssertEqual(APIEndpoint.collectionCommentFirst(collectionId: 7001).resolvedPath, "collection/comment/7001")
+        XCTAssertEqual(APIEndpoint.collectionComments(collectionId: 7001, page: 2, sort: CommentSort.popular.rawValue).resolvedPath, "collection/comment/all/7001/2")
+        XCTAssertEqual(APIEndpoint.collectionComments(collectionId: 7001, page: 2, sort: CommentSort.popular.rawValue).queryItems["sort"], "1")
+        XCTAssertEqual(APIEndpoint.collectionCommentDelete(commentId: 9101).resolvedPath, "collection/comment/delete/9101")
+        XCTAssertEqual(APIEndpoint.collectionCommentProcess(commentId: 9101).resolvedPath, "collection/comment/process/9101")
+        XCTAssertEqual(APIEndpoint.collectionCommentsProfile(profileId: 42, page: 3, sort: 0).resolvedPath, "collection/comment/all/profile/42/3")
+        XCTAssertEqual(APIEndpoint.collectionCommentReplies(commentId: 9101, page: 4, sort: 2).resolvedPath, "collection/comment/replies/9101/4")
+        XCTAssertEqual(APIEndpoint.collectionCommentReplies(commentId: 9101, page: 4, sort: 2).queryItems["sort"], "2")
+        XCTAssertEqual(APIEndpoint.collectionCommentVote(commentId: 9101, vote: CommentVote.plus.rawValue).resolvedPath, "collection/comment/vote/9101/2")
+
+        if case .json(let body) = APIEndpoint.collectionCommentAdd(collectionId: 7001, parentCommentId: nil, replyToProfileId: nil, message: "Привет", spoiler: false).body {
+            XCTAssertEqual(body.diagnosticDescription, "{message:\"Привет\",parentCommentId:null,replyToProfileId:null,spoiler:false}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        if case .json(let body) = APIEndpoint.collectionCommentAdd(collectionId: 7001, parentCommentId: 9101, replyToProfileId: 51, message: "Ответ", spoiler: true).body {
+            XCTAssertEqual(body.diagnosticDescription, "{message:\"Ответ\",parentCommentId:9101.0,replyToProfileId:51.0,spoiler:true}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        if case .json(let body) = APIEndpoint.collectionCommentEdit(commentId: 9101, message: "Правка", spoiler: true).body {
+            XCTAssertEqual(body.diagnosticDescription, "{message:\"Правка\",spoiler:true}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        if case .json(let body) = APIEndpoint.collectionCommentReport(commentId: 9101, message: "Спам", reason: 2).body {
+            XCTAssertEqual(body.diagnosticDescription, "{message:\"Спам\",reason:2.0}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+    }
+
+    func testCollectionReportAndSearchEndpointsMatchAndroid() {
+        let report = APIEndpoint.collectionReport(collectionId: 7001, message: "Спам", reason: 1)
+        XCTAssertEqual(report.resolvedPath, "collection/report/7001")
+        if case .json(let body) = report.body {
+            XCTAssertEqual(body.diagnosticDescription, "{message:\"Спам\",reason:1.0}")
+        } else {
+            XCTFail("Expected JSON body")
+        }
+
+        XCTAssertEqual(APIEndpoint.searchCollections(page: 2, query: "лето").resolvedPath, "search/collections/2")
+        XCTAssertEqual(APIEndpoint.searchFavoriteCollections(page: 3, query: "лето").resolvedPath, "search/favoriteCollections/3")
+        let profileSearch = APIEndpoint.searchProfileCollections(profileId: 42, page: 4, releaseId: 1001, query: "лето")
+        XCTAssertEqual(profileSearch.resolvedPath, "search/profileCollections/42/4")
+        XCTAssertEqual(profileSearch.queryItems["release_id"], "1001")
+        if case .json(let body) = profileSearch.body {
+            XCTAssertEqual(body.diagnosticDescription, "{query:\"лето\"}")
+        } else {
+            XCTFail("Expected JSON body")
         }
     }
 }

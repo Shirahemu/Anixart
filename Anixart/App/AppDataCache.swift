@@ -83,6 +83,10 @@ final class AppDataCache: ObservableObject {
         homeFeeds[category] = entry
     }
 
+    func clearHomeFeed(for category: HomeCategory) {
+        homeFeeds.removeValue(forKey: category)
+    }
+
     func listFeed(for tab: ProfileListTab) -> [Release]? {
         listFeeds[tab]
     }

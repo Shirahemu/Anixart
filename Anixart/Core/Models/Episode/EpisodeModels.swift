@@ -156,6 +156,65 @@ struct Episode: Codable, Equatable, Identifiable {
     }
 }
 
+extension Episode {
+    var resolvedWatchSourceID: Int64? {
+        sourceId ?? source?.id
+    }
+
+    func withWatched(_ watched: Bool) -> Episode {
+        Episode(
+            id: id,
+            addedDate: addedDate,
+            iframe: iframe,
+            isFiller: isFiller,
+            isWatched: watched,
+            name: name,
+            playbackPosition: playbackPosition,
+            position: position,
+            quality: quality,
+            releaseId: releaseId,
+            source: source,
+            sourceId: sourceId,
+            url: url
+        )
+    }
+
+    func watchedStateKey(fallbackSourceId: Int64? = nil) -> String {
+        if let id {
+            return "episode:\(id)"
+        }
+
+        let sourceID = resolvedWatchSourceID ?? fallbackSourceId
+        if let position, let sourceID {
+            return "source:\(sourceID):position:\(position)"
+        }
+
+        if let position {
+            return "position:\(position)"
+        }
+
+        return [name, url].compactMap { $0 }.joined(separator: "|")
+    }
+
+    func matchesWatchedStateTarget(_ target: Episode, fallbackSourceId: Int64? = nil) -> Bool {
+        if let id, let targetID = target.id {
+            return id == targetID
+        }
+
+        guard let position, let targetPosition = target.position, position == targetPosition else {
+            return false
+        }
+
+        let sourceID = resolvedWatchSourceID ?? fallbackSourceId
+        let targetSourceID = target.resolvedWatchSourceID ?? fallbackSourceId
+        if let sourceID, let targetSourceID {
+            return sourceID == targetSourceID
+        }
+
+        return true
+    }
+}
+
 struct EpisodeResponse: Codable, Equatable {
     let code: Int?
     let episodes: [Episode]?
@@ -164,11 +223,100 @@ struct EpisodeResponse: Codable, Equatable {
 struct TypesResponse: Codable, Equatable {
     let code: Int?
     let types: [EpisodeType]?
+
+    init(code: Int? = nil, types: [EpisodeType]? = nil) {
+        self.code = code
+        self.types = types
+    }
+
+    init(from decoder: Decoder) throws {
+        if let direct = try? LossyDecodableArray<EpisodeType>(from: decoder) {
+            code = nil
+            types = direct.values
+            return
+        }
+
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        code = container.decodeLossyInt(forKey: AnyCodingKey("code"))
+        types = container.decodeLossyArray([EpisodeType].self, forKey: AnyCodingKey("types"))
+            ?? container.decodeLossyArray([EpisodeType].self, forKey: AnyCodingKey("content"))
+    }
 }
 
 struct SourcesResponse: Codable, Equatable {
     let code: Int?
     let sources: [EpisodeSource]?
+}
+
+struct ReleaseStreamingPlatform: Codable, Equatable, Identifiable {
+    let id: Int64?
+    let name: String?
+    let icon: String?
+    let url: String?
+
+    init(id: Int64? = nil, name: String? = nil, icon: String? = nil, url: String? = nil) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.url = url
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        id = container.decodeFlexibleInt64(for: "id") ?? container.decodeFlexibleInt64(for: "@id")
+        name = container.decodeLossyString(forKey: AnyCodingKey("name"))
+        icon = container.decodeLossyString(forKey: AnyCodingKey("icon"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("image"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("logo"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("icon_url"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("iconUrl"))
+        url = container.decodeLossyString(forKey: AnyCodingKey("url"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("link"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("web_url"))
+            ?? container.decodeLossyString(forKey: AnyCodingKey("webUrl"))
+    }
+
+    var stableID: String {
+        id.map { "id:\($0)" } ?? [name, url, icon].compactMap { $0 }.joined(separator: "|")
+    }
+
+    var displayName: String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Платформа" : trimmed
+    }
+
+    var validURL: URL? {
+        guard let url,
+              let parsedURL = URL(string: url),
+              let scheme = parsedURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+        return parsedURL
+    }
+}
+
+struct ReleaseStreamingPlatformsResponse: Codable, Equatable {
+    let platforms: [ReleaseStreamingPlatform]
+
+    init(platforms: [ReleaseStreamingPlatform] = []) {
+        self.platforms = platforms
+    }
+
+    init(from decoder: Decoder) throws {
+        if let direct = try? LossyDecodableArray<ReleaseStreamingPlatform>(from: decoder) {
+            platforms = direct.values
+            return
+        }
+
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        platforms = container.decodeLossyArray([ReleaseStreamingPlatform].self, forKey: AnyCodingKey("platforms"))
+            ?? container.decodeLossyArray([ReleaseStreamingPlatform].self, forKey: AnyCodingKey("releaseStreamingPlatforms"))
+            ?? container.decodeLossyArray([ReleaseStreamingPlatform].self, forKey: AnyCodingKey("release_streaming_platforms"))
+            ?? container.decodeLossyArray([ReleaseStreamingPlatform].self, forKey: AnyCodingKey("content"))
+            ?? []
+    }
 }
 
 struct EpisodeTargetResponse: Codable, Equatable {

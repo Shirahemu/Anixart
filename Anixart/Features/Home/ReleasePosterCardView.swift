@@ -20,6 +20,7 @@ struct ReleasePosterCardView: View {
                         .padding(6)
                         .background(.black.opacity(0.45), in: Circle())
                         .padding(6)
+                        .allowsHitTesting(false)
                 }
             }
             .aspectRatio(2.0 / 3.0, contentMode: .fit)
@@ -102,6 +103,7 @@ struct PosterImageView: View {
             .overlay {
                 Image(systemName: "play.rectangle")
                     .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
             }
     }
 

@@ -55,6 +55,7 @@ struct ReleaseCardView: View {
             .overlay {
                 Image(systemName: "play.rectangle")
                     .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
             }
     }
 }

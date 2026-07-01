@@ -73,8 +73,18 @@ final class MockAPIClient: APIClientProtocol {
                 "completed_count": 24,
                 "hold_on_count": 1,
                 "dropped_count": 0,
+                "collection_count": 3,
+                "video_count": 5,
                 "watched_episode_count": 120,
                 "watched_time": 3600,
+                "collections_preview": [
+                  { "id": 7001, "title": "Mock Collection сезон", "description": "Подборка из mock-профиля.", "image": "https://example.test/collection-7001.jpg", "favorite_count": 21, "comment_count": 3, "release_count": 3 },
+                  { "id": 7002, "title": "Mock Collection фильмы", "description": "Ещё одна подборка для перехода в детали.", "image": "https://example.test/collection-7002.jpg", "favorite_count": 8, "comment_count": 1, "release_count": 2 }
+                ],
+                "release_videos_preview": [
+                  { "id": 4101, "title": "Mock трейлер профиля", "image": "https://example.test/release-video-4101.jpg", "url": "https://example.test/source/video-4101", "player_url": "https://example.test/player/video-4101", "timestamp": 1782600000, "favorite_count": 22, "is_favorite": true, "profile": { "id": 42, "login": "mock_user" }, "release": { "id": 1001, "title_ru": "Mock Release" }, "category": { "id": 1, "name": "Трейлеры" }, "hosting": { "id": 1, "name": "YouTube", "icon": "https://example.test/hosting-1.png" } },
+                  { "id": 4102, "title": "Mock клип профиля", "image": "https://example.test/release-video-4102.jpg", "url": "https://example.test/source/video-4102", "timestamp": 1782500000, "favorite_count": 7, "is_favorite": false, "profile": { "id": 42, "login": "mock_user" }, "release": { "id": 1001, "title_ru": "Mock Release" }, "category": { "id": 2, "name": "Клипы" }, "hosting": { "id": 2, "name": "VK Видео", "icon": "https://example.test/hosting-2.png" } }
+                ],
                 "friends_preview": [
                   { "id": 51, "login": "mock_friend_1", "avatar": "https://example.test/friend-1.png", "is_online": true, "is_verified": true, "friend_count": 12, "friend_status": 2 },
                   { "id": 52, "login": "mock_friend_2", "avatar": "https://example.test/friend-2.png", "is_online": false, "is_sponsor": true, "friend_count": 8, "friend_status": 2 },
@@ -134,6 +144,9 @@ final class MockAPIClient: APIClientProtocol {
                 "comment_count": 7,
                 "video_count": 1,
                 "collection_count": 0,
+                "release_videos_preview": [
+                  { "id": 5101, "title": "Публичное mock-видео", "image": "https://example.test/release-video-5101.jpg", "url": "https://example.test/source/video-5101", "timestamp": 1782400000, "favorite_count": 5, "is_favorite": false, "profile": { "id": \(requestedId), "login": "mock_profile_\(requestedId)" }, "release": { "id": 1001, "title_ru": "Mock Release" }, "category": { "id": 1, "name": "Трейлеры" }, "hosting": { "id": 1, "name": "YouTube", "icon": "https://example.test/hosting-1.png" } }
+                ],
                 "is_online": true,
                 "is_verified": true,
                 "friend_status": 0,
@@ -332,6 +345,11 @@ final class MockAPIClient: APIClientProtocol {
                 "episodes_released": 30,
                 "favorite_count": 10,
                 "comments_count": 2,
+                "can_video_appeal": true,
+                "video_banners": [
+                  { "id": 4101, "title": "Mock трейлер", "image": "https://example.test/video-4101.jpg", "url": "https://example.test/watch/video-4101" },
+                  { "id": 4102, "title": "Mock клип", "image": "https://example.test/video-4102.jpg", "url": "https://example.test/watch/video-4102" }
+                ],
                 "last_view_episode": { "id": 12, "name": "Episode 12", "position": 12, "source_id": 1 },
                 "comments": [
                   {
@@ -355,6 +373,14 @@ final class MockAPIClient: APIClientProtocol {
                   }
                 ],
                 "related_count": 5,
+                "related": {
+                  "id": 44,
+                  "name": "mock-related",
+                  "name_ru": "Mock франшиза",
+                  "description": "Полный список связанных тайтлов загружается отдельным API.",
+                  "image": "https://example.test/related.jpg",
+                  "release_count": 19
+                },
                 "related_releases": [
                   { "id": 2001, "title_ru": "Связанный Mock 1", "year": "2024", "profile_list_status": 1 },
                   { "id": 2002, "title_ru": "Связанный Mock 2", "year": "2023", "profile_list_status": 2 },
@@ -366,6 +392,73 @@ final class MockAPIClient: APIClientProtocol {
                 "country": "Япония",
                 "genres": "драма, романтика"
               }
+            }
+            """
+        case "release.streaming.platforms":
+            json = """
+            {
+              "platforms": [
+                { "id": 1, "name": "Кинопоиск", "icon": "https://example.test/kinopoisk.png", "url": "https://www.kinopoisk.ru/" },
+                { "id": 2, "name": "Иви", "icon": "https://example.test/ivi.png", "url": "https://www.ivi.ru/" }
+              ]
+            }
+            """
+        case "releaseVideo.categories":
+            json = Self.releaseVideoCategoriesJSON()
+        case "releaseVideo.main":
+            json = Self.releaseVideoMainJSON()
+        case "releaseVideo.page":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.releaseVideoPageJSON(page: page, baseId: 4200, categoryId: nil)
+        case "releaseVideo.category":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            let categoryId = Int(endpoint.pathParameters["categoryId"] ?? "1") ?? 1
+            json = Self.releaseVideoPageJSON(page: page, baseId: 4300 + categoryId * 100, categoryId: categoryId)
+        case "releaseVideo.profile":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.releaseVideoPageJSON(page: page, baseId: 5200, categoryId: nil)
+        case "releaseVideoFavorite.all":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.releaseVideoPageJSON(page: page, baseId: 6200, categoryId: nil, forceFavorite: true)
+        case "releaseVideoFavorite.add", "releaseVideoFavorite.delete":
+            let id = Int(endpoint.pathParameters["r_id"] ?? "4201") ?? 4201
+            json = """
+            { "code": 0, "video": \(Self.releaseVideoJSON(id: id, title: "Mock video \(id)", categoryId: 1, categoryName: "Трейлеры", favorite: endpoint.name == "releaseVideoFavorite.add")) }
+            """
+        case "releaseVideo.appeal", "releaseVideoAppeal.add":
+            json = """
+            { "code": 0, "video": \(Self.releaseVideoJSON(id: 7991, title: "Предложенное видео", categoryId: 1, categoryName: "Трейлеры", favorite: false)) }
+            """
+        case "releaseVideoAppeal.profile", "releaseVideoAppeal.profile.last":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.releaseVideoPageJSON(page: page, baseId: 7200, categoryId: nil)
+        case "releaseVideoAppeal.delete":
+            json = """
+            { "code": 0 }
+            """
+        case "related.releases":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            let pageSizes = [12, 6, 1]
+            let pageSize = page < pageSizes.count ? pageSizes[page] : 0
+            let baseId = 2100 + page * 100
+            let releases: String
+            let totalPageCount = 3
+            if pageSize > 0 {
+                releases = (1...pageSize).map { offset in
+                    let id = baseId + offset
+                    return """
+                    { "id": \(id), "title_ru": "Связанный API Mock \(id)", "year": "202\(offset % 10)", "image": "https://example.test/related-\(id).jpg", "episodes_released": \(max(1, offset % 12)), "episodes_total": 12 }
+                    """
+                }.joined(separator: ",")
+            } else {
+                releases = ""
+            }
+            json = """
+            {
+              "content": [\(releases)],
+              "currentPage": \(page),
+              "totalCount": 19,
+              "totalPageCount": \(totalPageCount)
             }
             """
         case "release.vote.add", "release.vote.delete":
@@ -522,6 +615,14 @@ final class MockAPIClient: APIClientProtocol {
             json = """
             { "types": [{ "id": 1, "name": "TV", "episodesCount": 30 }] }
             """
+        case "type.all":
+            json = """
+            { "types": [
+              { "id": 1, "name": "AniLibria" },
+              { "id": 2, "name": "AniDUB" },
+              { "id": 3, "name": "Studio Band" }
+            ] }
+            """
         case "episode.sources":
             json = """
             { "sources": [{ "id": 1, "name": "Mock source", "episodesCount": 30, "type": { "id": 1, "name": "TV" } }] }
@@ -537,9 +638,31 @@ final class MockAPIClient: APIClientProtocol {
             json = """
             { "episode": { "id": 1, "name": "Episode 1", "position": 1, "url": "https://example.test/player/episode-1", "iframe": true } }
             """
+        case "episode.watch", "episode.unwatch":
+            json = """
+            { "code": 0 }
+            """
         case "direct.links":
             json = """
             { "links": { "1080": "https://example.test/video-1080.m3u8", "720": "https://example.test/video-720.mp4" }, "default": "https://example.test/default.mp4" }
+            """
+        case "filter":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            let pageSize = page == 0 ? 12 : (page == 1 ? 8 : 0)
+            let baseId = 3000 + page * 100
+            let releases = pageSize == 0 ? "" : (1...pageSize).map { offset in
+                let id = baseId + offset
+                return """
+                { "id": \(id), "title_ru": "Mock Filter Result \(id)", "year": "202\(offset % 7)", "image": "https://example.test/filter-\(id).jpg", "episodes_released": \(max(1, offset % 12)), "episodes_total": 12, "last_update_date": \(1782600000 + offset) }
+                """
+            }.joined(separator: ",")
+            json = """
+            {
+              "content": [\(releases)],
+              "currentPage": \(page),
+              "totalCount": 20,
+              "totalPageCount": 2
+            }
             """
         case "search.releases":
             json = """
@@ -548,6 +671,50 @@ final class MockAPIClient: APIClientProtocol {
         case "search.profiles":
             json = """
             { "content": [{ "id": 42, "login": "mock_user" }], "currentPage": 0, "totalCount": 1, "totalPageCount": 1 }
+            """
+        case "collection.get":
+            let id = Int(endpoint.pathParameters["id"] ?? "7001") ?? 7001
+            json = """
+            { "code": 0, "collection": \(Self.collectionJSON(id: id, title: "Mock Collection \(id)", isPrivate: id == 7003, isFavorite: id != 7002)) }
+            """
+        case "collection.all",
+             "collection.favorite.all",
+             "collection.all.profile",
+             "collection.all.release",
+             "search.collections",
+             "search.favoriteCollections",
+             "search.profileCollections":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.collectionPageJSON(page: page, endpointName: endpoint.name)
+        case "collection.releases", "collection.my.releases":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.collectionReleasePageJSON(page: page)
+        case "collection.my.create", "collection.my.edit", "collection.my.editImage":
+            json = """
+            { "code": 0, "collection": \(Self.collectionJSON(id: 7999, title: "Моя mock-коллекция", isPrivate: false, isFavorite: false)) }
+            """
+        case "collection.my.delete",
+             "collection.my.release.add",
+             "collection.favorite.add",
+             "collection.favorite.delete",
+             "collection.report",
+             "collection.comment.delete",
+             "collection.comment.vote",
+             "collection.comment.report",
+             "collection.comment.process":
+            json = """
+            { "code": 0 }
+            """
+        case "collection.comment.first", "collection.comment.all", "collection.comment.all.profile":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            json = Self.collectionCommentPageJSON(page: page, parentId: nil)
+        case "collection.comment.replies":
+            let page = Int(endpoint.pathParameters["page"] ?? "0") ?? 0
+            let parentId = Int(endpoint.pathParameters["commentId"] ?? "9101")
+            json = Self.collectionCommentPageJSON(page: page, parentId: parentId)
+        case "collection.comment.add", "collection.comment.edit":
+            json = """
+            { "code": 0, "comment": \(Self.collectionCommentJSON(id: 9991, parentId: nil, message: "Mock-комментарий отправлен.")) }
             """
         case "favorite.all", "profile.list.all":
             json = """
@@ -598,11 +765,257 @@ final class MockAPIClient: APIClientProtocol {
         return Data(json.utf8)
     }
 
+    private static func releaseVideoMainJSON() -> String {
+        let trailers = (1...25).map { offset in
+            releaseVideoJSON(
+                id: 4100 + offset,
+                title: "Mock трейлер \(offset)",
+                categoryId: 1,
+                categoryName: "Трейлеры",
+                favorite: offset.isMultiple(of: 3)
+            )
+        }.joined(separator: ",")
+        let clips = (1...6).map { offset in
+            releaseVideoJSON(
+                id: 4500 + offset,
+                title: "Mock клип \(offset)",
+                categoryId: 2,
+                categoryName: "Клипы",
+                hostingName: offset.isMultiple(of: 2) ? "YouTube" : "VK Видео",
+                favorite: offset.isMultiple(of: 2)
+            )
+        }.joined(separator: ",")
+        let last = (1...3).map { offset in
+            releaseVideoJSON(
+                id: 4700 + offset,
+                title: "Последнее mock-видео \(offset)",
+                categoryId: offset,
+                categoryName: offset == 1 ? "Трейлеры" : "Клипы",
+                favorite: offset == 2
+            )
+        }.joined(separator: ",")
+
+        return """
+        {
+          "code": 0,
+          "release": {
+            "id": 1001,
+            "title_ru": "Mock Release",
+            "title_original": "Mock Original",
+            "image": "https://example.test/poster.jpg",
+            "year": "2026",
+            "category": { "id": 1, "name": "Сериал" },
+            "status": { "id": 2, "name": "Выходит" }
+          },
+          "streaming_platforms": [
+            { "id": 1, "name": "Кинопоиск", "icon": "https://example.test/kinopoisk.png", "url": "https://www.kinopoisk.ru/" },
+            { "id": 2, "name": "Иви", "icon": "https://example.test/ivi.png", "url": "https://www.ivi.ru/" }
+          ],
+          "blocks": [
+            { "category": { "id": 1, "name": "Трейлеры" }, "videos": [\(trailers)] },
+            { "category": { "id": 2, "name": "Клипы" }, "videos": [\(clips)] }
+          ],
+          "last_videos": [\(last)],
+          "can_appeal": true
+        }
+        """
+    }
+
+    private static func releaseVideoCategoriesJSON() -> String {
+        """
+        {
+          "code": 0,
+          "categories": [
+            { "id": 1, "name": "Трейлеры" },
+            { "id": 2, "name": "Клипы" },
+            { "id": 3, "name": "Интервью" }
+          ]
+        }
+        """
+    }
+
+    private static func releaseVideoPageJSON(page: Int, baseId: Int, categoryId: Int?, forceFavorite: Bool = false) -> String {
+        let count = page == 0 ? 8 : (page == 1 ? 4 : 0)
+        let videos = count == 0 ? "" : (1...count).map { offset in
+            let id = baseId + page * 100 + offset
+            let resolvedCategoryId = categoryId ?? ((offset % 3) + 1)
+            let categoryName: String
+            switch resolvedCategoryId {
+            case 1:
+                categoryName = "Трейлеры"
+            case 2:
+                categoryName = "Клипы"
+            default:
+                categoryName = "Интервью"
+            }
+            return releaseVideoJSON(
+                id: id,
+                title: "Mock видео \(id)",
+                categoryId: resolvedCategoryId,
+                categoryName: categoryName,
+                hostingName: offset.isMultiple(of: 2) ? "YouTube" : "VK Видео",
+                favorite: forceFavorite || offset.isMultiple(of: 4)
+            )
+        }.joined(separator: ",")
+
+        return """
+        {
+          "content": [\(videos)],
+          "currentPage": \(page),
+          "totalCount": 12,
+          "totalPageCount": 2
+        }
+        """
+    }
+
+    private static func releaseVideoJSON(
+        id: Int,
+        title: String,
+        categoryId: Int,
+        categoryName: String,
+        hostingName: String = "YouTube",
+        favorite: Bool
+    ) -> String {
+        """
+        {
+          "id": \(id),
+          "title": "\(escape(title))",
+          "image": "https://example.test/release-video-\(id).jpg",
+          "url": "https://example.test/source/video-\(id)",
+          "player_url": "https://example.test/player/video-\(id)",
+          "timestamp": \(1782600000 - id % 1000),
+          "favorite_count": \(20 + id % 17),
+          "is_favorite": \(favorite ? "true" : "false"),
+          "delete": false,
+          "profile": { "id": 42, "login": "mock_user", "avatar": "https://example.test/avatar.png" },
+          "release": { "id": 1001, "title_ru": "Mock Release", "image": "https://example.test/poster.jpg", "year": "2026" },
+          "category": { "id": \(categoryId), "name": "\(escape(categoryName))" },
+          "hosting": { "id": \(categoryId), "name": "\(escape(hostingName))", "icon": "https://example.test/hosting-\(categoryId).png" }
+        }
+        """
+    }
+
     private static func escape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private static func collectionPageJSON(page: Int, endpointName: String) -> String {
+        let isSecondPage = page > 0
+        let items: String
+        if isSecondPage {
+            items = """
+            \(collectionJSON(id: 7011, title: "Mock Collection extra", isPrivate: false, isFavorite: endpointName.contains("favorite"))),
+            \(collectionJSON(id: 7012, title: "Mock Collection archive", isPrivate: false, isFavorite: false))
+            """
+        } else {
+            items = """
+            \(collectionJSON(id: 7001, title: "Mock Collection сезон", isPrivate: false, isFavorite: true)),
+            \(collectionJSON(id: 7002, title: "Mock Collection фильмы", isPrivate: false, isFavorite: endpointName.contains("favorite"))),
+            \(collectionJSON(id: 7003, title: "Mock Collection приватная", isPrivate: true, isFavorite: false))
+            """
+        }
+        return """
+        {
+          "content": [\(items)],
+          "currentPage": \(page),
+          "totalCount": 5,
+          "totalPageCount": 2
+        }
+        """
+    }
+
+    private static func collectionJSON(id: Int, title: String, isPrivate: Bool, isFavorite: Bool) -> String {
+        """
+        {
+          "id": \(id),
+          "title": "\(escape(title))",
+          "description": "Mock-описание коллекции для навигации и проверки карточек.",
+          "image": "https://example.test/collection-\(id).jpg",
+          "creator": { "id": 42, "login": "mock_user", "avatar": "https://example.test/avatar.png" },
+          "is_private": \(isPrivate ? "true" : "false"),
+          "is_favorite": \(isFavorite ? "true" : "false"),
+          "creation_date": 1782000000,
+          "last_update_date": 1782600000,
+          "favorites_count": \(20 + id % 17),
+          "comment_count": \(2 + id % 5),
+          "releases": [
+            { "id": 1001, "title_ru": "Mock Release", "year": "2026", "image": "https://example.test/poster.jpg", "episodes_released": 6, "episodes_total": 12 },
+            { "id": 1002, "title_ru": "Mock Release 2", "year": "2025", "image": "https://example.test/poster-2.jpg", "episodes_released": 12, "episodes_total": 12 },
+            { "id": 1003, "title_ru": "Mock Release 3", "year": "2024", "image": "https://example.test/poster-3.jpg", "episodes_released": 3, "episodes_total": 10 }
+          ]
+        }
+        """
+    }
+
+    private static func collectionReleasePageJSON(page: Int) -> String {
+        let content: String
+        if page > 0 {
+            content = """
+            { "id": 1010, "title_ru": "Mock Collection Release Extra", "year": "2024", "image": "https://example.test/collection-release-extra.jpg", "episodes_released": 8, "episodes_total": 12 }
+            """
+        } else {
+            content = """
+            { "id": 1001, "title_ru": "Mock Release", "year": "2026", "image": "https://example.test/poster.jpg", "episodes_released": 6, "episodes_total": 12 },
+            { "id": 1002, "title_ru": "Mock Release 2", "year": "2025", "image": "https://example.test/poster-2.jpg", "episodes_released": 12, "episodes_total": 12 },
+            { "id": 1003, "title_ru": "Mock Release 3", "year": "2024", "image": "https://example.test/poster-3.jpg", "episodes_released": 3, "episodes_total": 10 }
+            """
+        }
+        return """
+        {
+          "content": [\(content)],
+          "currentPage": \(page),
+          "totalCount": 4,
+          "totalPageCount": 2
+        }
+        """
+    }
+
+    private static func collectionCommentPageJSON(page: Int, parentId: Int?) -> String {
+        let comments: String
+        if let parentId {
+            comments = """
+            \(collectionCommentJSON(id: parentId + 100, parentId: parentId, message: "Mock-ответ на комментарий."))
+            """
+        } else if page > 0 {
+            comments = """
+            \(collectionCommentJSON(id: 9201, parentId: nil, message: "Ещё один mock-комментарий."))
+            """
+        } else {
+            comments = """
+            \(collectionCommentJSON(id: 9101, parentId: nil, message: "Mock-комментарий к коллекции.")),
+            \(collectionCommentJSON(id: 9102, parentId: nil, message: "Комментарий со спойлером.", spoiler: true))
+            """
+        }
+        return """
+        {
+          "content": [\(comments)],
+          "currentPage": \(page),
+          "totalCount": \(parentId == nil ? 3 : 1),
+          "totalPageCount": \(parentId == nil ? 2 : 1)
+        }
+        """
+    }
+
+    private static func collectionCommentJSON(id: Int, parentId: Int?, message: String, spoiler: Bool = false) -> String {
+        """
+        {
+          "id": \(id),
+          "message": "\(escape(message))",
+          "profile": { "id": 51, "login": "mock_commenter", "avatar": "https://example.test/commenter.png" },
+          "timestamp": 1782600000,
+          "vote": 0,
+          "vote_count": \(id % 9),
+          "reply_count": \(parentId == nil && id == 9101 ? 1 : 0),
+          "parent_comment_id": \(parentId.map(String.init) ?? "null"),
+          "is_deleted": false,
+          "is_edited": false,
+          "is_reply": \(parentId == nil ? "false" : "true"),
+          "is_spoiler": \(spoiler ? "true" : "false")
+        }
+        """
     }
 
     private func emit(endpoint: APIEndpoint, start: Date, data: Data, message: String) async {

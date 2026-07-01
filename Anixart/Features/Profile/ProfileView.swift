@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openURL) private var openURL
     let profileId: Int64?
 
     @State private var profileID = ""
@@ -12,6 +13,9 @@ struct ProfileView: View {
     @State private var didLoad = false
     @State private var isFriendActionRunning = false
     @State private var friendActionMessage: String?
+    @State private var collectionEditorRoute: CollectionEditorRoute?
+    @State private var releaseVideoWebRoute: ReleaseVideoWebRoute?
+    @State private var releaseVideoMessage: String?
 
     init(profileId: Int64? = nil) {
         self.profileId = profileId
@@ -48,7 +52,8 @@ struct ProfileView: View {
 
                 historyPreviewSection(profile.history)
                 commentsPreviewSection(profile.commentsPreview)
-                collectionsPreviewSection(profile.collectionsPreview)
+                collectionsPreviewSection(profile)
+                videosPreviewSection(profile)
 
                 friendsPreviewSection(profile)
 
@@ -93,6 +98,23 @@ struct ProfileView: View {
         .onAppear {
             guard didLoad, let id = profileId ?? appState.session?.profileId else { return }
             applyCachedProfile(id: id)
+        }
+        .sheet(item: $collectionEditorRoute) { route in
+            NavigationStack {
+                CollectionEditorView(mode: route.mode) {
+                    Task { await loadProfile() }
+                }
+            }
+        }
+        .sheet(item: $releaseVideoWebRoute) { route in
+            ReleaseVideoWebPlayerView(route: route)
+        }
+        .alert("Видео", isPresented: releaseVideoAlertBinding) {
+            Button("ОК") {
+                releaseVideoMessage = nil
+            }
+        } message: {
+            Text(releaseVideoMessage ?? "")
         }
     }
 
@@ -151,11 +173,6 @@ struct ProfileView: View {
                     } label: {
                         Label("Показать все", systemImage: "list.bullet")
                     }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        appState.diagnosticsLogger.log(level: .info, category: .profile, message: "Profile history preview opened", metadata: [
-                            "previewCount": "\(min(releases.count, 3))"
-                        ])
-                    })
                 }
             }
         }
@@ -178,22 +195,127 @@ struct ProfileView: View {
     }
 
     @ViewBuilder
-    private func collectionsPreviewSection(_ collections: [CollectionPreview]?) -> some View {
-        if let collections, !collections.isEmpty {
+    private func collectionsPreviewSection(_ profile: Profile) -> some View {
+        let collections = profile.collectionsPreview ?? []
+        let shouldShow = !collections.isEmpty || (profile.collectionCount ?? 0) > 0 || isMyProfile
+        if shouldShow {
             Section("Коллекции") {
                 ForEach(collections, id: \.stableCollectionID) { collection in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(collection.title ?? "Коллекция")
-                            .font(.subheadline.weight(.semibold))
-                        if let description = collection.description, !description.isEmpty {
-                            Text(description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
-                        }
+                    NavigationLink {
+                        CollectionDetailsView(collectionId: collection.id ?? 0)
+                    } label: {
+                        CollectionPreviewRowView(collection: collection)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(collection.id == nil)
+                }
+
+                if let profileId = profile.id {
+                    NavigationLink {
+                        ProfileCollectionsView(profileId: profileId)
+                    } label: {
+                        AppDisclosureRow(title: "Показать все")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if isMyProfile {
+                    Button {
+                        collectionEditorRoute = CollectionEditorRoute(mode: .create)
+                    } label: {
+                        Label("Создать коллекцию", systemImage: "plus")
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func videosPreviewSection(_ profile: Profile) -> some View {
+        let videos = profile.releaseVideosPreview ?? []
+        let shouldShow = !videos.isEmpty || (profile.videoCount ?? 0) > 0
+        if shouldShow {
+            Section("Видео") {
+                if videos.isEmpty {
+                    Text("Откройте полный список видео.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(videos.prefix(3), id: \.stableVideoID) { video in
+                        ReleaseVideoRowView(
+                            video: video,
+                            canFavorite: canUseReleaseVideoFavorite,
+                            onOpen: { openReleaseVideo(video) },
+                            onToggleFavorite: {
+                                Task { await toggleProfileVideoFavorite(video) }
+                            }
+                        )
+                        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                    }
+                }
+
+                if let profileId = profile.id {
+                    NavigationLink {
+                        ProfileVideosView(profileId: profileId, isMyProfile: isMyProfile)
+                    } label: {
+                        AppDisclosureRow(title: "Показать все", systemImage: "video")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var canUseReleaseVideoFavorite: Bool {
+        appState.config.isMockMode || appState.hasToken
+    }
+
+    private var releaseVideoAlertBinding: Binding<Bool> {
+        Binding(
+            get: { releaseVideoMessage != nil },
+            set: { if !$0 { releaseVideoMessage = nil } }
+        )
+    }
+
+    private func openReleaseVideo(_ video: ReleaseVideo) {
+        appState.diagnosticsLogger.log(level: .info, category: .releaseVideo, message: "Profile release video open action", metadata: [
+            "videoId": video.id.map(String.init) ?? "-",
+            "hasPlayerUrl": "\(video.validPlayerURL != nil)",
+            "hasSourceUrl": "\(video.validSourceURL != nil)"
+        ])
+
+        if let url = video.validPlayerURL {
+            releaseVideoWebRoute = ReleaseVideoWebRoute(url: url, title: video.displayTitle)
+        } else if let url = video.validSourceURL {
+            openURL(url)
+        } else {
+            releaseVideoMessage = "Видео недоступно"
+        }
+    }
+
+    private func toggleProfileVideoFavorite(_ video: ReleaseVideo) async {
+        guard canUseReleaseVideoFavorite else {
+            releaseVideoMessage = "Нужен вход"
+            return
+        }
+        guard let videoId = video.id else {
+            releaseVideoMessage = "Видео недоступно"
+            return
+        }
+
+        do {
+            let service = ReleaseVideoService(apiClient: appState.makeAPIClient())
+            let response = video.isFavorite == true
+                ? try await service.deleteFavorite(videoId: videoId)
+                : try await service.addFavorite(videoId: videoId)
+            if let code = response.code, code != Response.successful {
+                releaseVideoMessage = "Сервер не принял действие. Код: \(code)"
+                return
+            }
+            await loadProfile()
+        } catch {
+            if error.isUserInvisibleCancellation { return }
+            releaseVideoMessage = "Не удалось изменить избранное."
         }
     }
 

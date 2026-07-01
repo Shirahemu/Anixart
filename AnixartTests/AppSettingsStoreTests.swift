@@ -9,6 +9,7 @@ final class AppSettingsStoreTests: XCTestCase {
             headerProfile: .exactAndroid852,
             isMockMode: false,
             isSignEnabled: true,
+            isOfficialStreamingPlatformsEnabled: false,
             requestTimeout: 42
         )
 
@@ -20,7 +21,34 @@ final class AppSettingsStoreTests: XCTestCase {
         XCTAssertEqual(decoded.headerProfile, .exactAndroid852)
         XCTAssertFalse(decoded.isMockMode)
         XCTAssertTrue(decoded.isSignEnabled)
+        XCTAssertFalse(decoded.isOfficialStreamingPlatformsEnabled)
         XCTAssertEqual(decoded.requestTimeout, 42)
+    }
+
+    func testAppConfigDefaultsOfficialStreamingPlatformsToEnabled() throws {
+        let defaultConfig = AppConfig()
+        XCTAssertTrue(defaultConfig.isOfficialStreamingPlatformsEnabled)
+
+        let oldConfigData = Data("""
+        {
+          "environmentKind": "primary",
+          "customBaseURLString": "",
+          "headerProfile": "iosTransparent",
+          "isMockMode": true,
+          "isSignEnabled": false,
+          "isDiagnosticsVerbose": false,
+          "isFullTraceEnabled": false,
+          "isPreferWebViewForIframe": true,
+          "isDirectParseBeforeWebViewEnabled": false,
+          "webPlayerUserAgentProfile": "androidWebView",
+          "requestTimeout": 25
+        }
+        """.utf8)
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: oldConfigData)
+        XCTAssertTrue(decoded.isOfficialStreamingPlatformsEnabled)
+
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(defaultConfig)) as? [String: Any]
+        XCTAssertEqual(encoded?["isOfficialStreamingPlatformsEnabled"] as? Bool, true)
     }
 
     func testUserDefaultsStorePersistsConfigAndSession() {

@@ -126,6 +126,94 @@ final class ReleaseDecodingTests: XCTestCase {
         XCTAssertEqual(release.personalStatusTitle, "Просмотрено")
     }
 
+    func testStreamingPlatformsDecodeDirectArray() throws {
+        let data = Data(#"[{ "id": 1, "name": "Кинопоиск", "url": "https://kinopoisk.test/" }]"#.utf8)
+        let response = try JSONDecoder().decode(ReleaseStreamingPlatformsResponse.self, from: data)
+
+        XCTAssertEqual(response.platforms.count, 1)
+        XCTAssertEqual(response.platforms.first?.id, 1)
+        XCTAssertEqual(response.platforms.first?.name, "Кинопоиск")
+        XCTAssertEqual(response.platforms.first?.url, "https://kinopoisk.test/")
+    }
+
+    func testStreamingPlatformsDecodeKnownWrappers() throws {
+        let wrappers = [
+            "platforms",
+            "releaseStreamingPlatforms",
+            "release_streaming_platforms",
+            "content"
+        ]
+
+        for key in wrappers {
+            let data = Data(#"{ "code": 0, "\#(key)": [{ "id": 2, "name": "Иви", "link": "https://ivi.test/" }] }"#.utf8)
+            let response = try JSONDecoder().decode(ReleaseStreamingPlatformsResponse.self, from: data)
+
+            XCTAssertEqual(response.platforms.count, 1, key)
+            XCTAssertEqual(response.platforms.first?.id, 2, key)
+            XCTAssertEqual(response.platforms.first?.name, "Иви", key)
+            XCTAssertEqual(response.platforms.first?.url, "https://ivi.test/", key)
+        }
+    }
+
+    func testStreamingPlatformDecodesLossyIDAndAlternateFields() throws {
+        let data = Data(#"{ "platforms": [{ "id": "7", "name": 123, "icon_url": "https://image.test/icon.png", "web_url": "https://okko.test/" }] }"#.utf8)
+        let response = try JSONDecoder().decode(ReleaseStreamingPlatformsResponse.self, from: data)
+        let platform = try XCTUnwrap(response.platforms.first)
+
+        XCTAssertEqual(platform.id, 7)
+        XCTAssertEqual(platform.name, "123")
+        XCTAssertEqual(platform.icon, "https://image.test/icon.png")
+        XCTAssertEqual(platform.url, "https://okko.test/")
+        XCTAssertEqual(platform.validURL?.host, "okko.test")
+    }
+
+    func testRelatedDecodesAndroidFields() throws {
+        let json = """
+        {
+          "id": 44,
+          "name": "mock-related",
+          "name_ru": "Mock франшиза",
+          "description": "Описание связанной серии",
+          "image": "https://example.test/related.jpg",
+          "images": ["https://example.test/related-2.jpg"],
+          "release_count": 9
+        }
+        """
+
+        let related = try SnakeCaseDecodingTests.decoder.decode(Related.self, from: Data(json.utf8))
+
+        XCTAssertEqual(related.id, 44)
+        XCTAssertEqual(related.name, "mock-related")
+        XCTAssertEqual(related.nameRu, "Mock франшиза")
+        XCTAssertEqual(related.description, "Описание связанной серии")
+        XCTAssertEqual(related.image, "https://example.test/related.jpg")
+        XCTAssertEqual(related.images, ["https://example.test/related-2.jpg"])
+        XCTAssertEqual(related.releaseCount, 9)
+    }
+
+    func testRelatedPageableResponseDecodesReleases() throws {
+        let json = """
+        {
+          "content": [
+            { "id": 2101, "title_ru": "Связанный 1", "year": "2024" },
+            { "id": 2102, "title_ru": "Связанный 2", "year": "2023" }
+          ],
+          "current_page": 1,
+          "total_count": 9,
+          "total_page_count": 3
+        }
+        """
+
+        let response = try SnakeCaseDecodingTests.decoder.decode(PageableResponse<Release>.self, from: Data(json.utf8))
+
+        XCTAssertEqual(response.content?.count, 2)
+        XCTAssertEqual(response.content?.first?.id, 2101)
+        XCTAssertEqual(response.content?.first?.titleRu, "Связанный 1")
+        XCTAssertEqual(response.currentPage, 1)
+        XCTAssertEqual(response.totalCount, 9)
+        XCTAssertEqual(response.totalPageCount, 3)
+    }
+
     private static let sampleDetailed = """
     {
       "code": 0,

@@ -18,6 +18,7 @@ struct AppConfig: Codable, Equatable {
     var isPreferWebViewForIframe: Bool = true
     var isDirectParseBeforeWebViewEnabled: Bool = false
     var webPlayerUserAgentProfile: WebPlayerUserAgentProfile = .androidWebView
+    var isOfficialStreamingPlatformsEnabled: Bool = true
     var requestTimeout: TimeInterval = 25
 
     enum CodingKeys: String, CodingKey {
@@ -31,6 +32,7 @@ struct AppConfig: Codable, Equatable {
         case isPreferWebViewForIframe
         case isDirectParseBeforeWebViewEnabled
         case webPlayerUserAgentProfile
+        case isOfficialStreamingPlatformsEnabled
         case requestTimeout
     }
 
@@ -45,6 +47,7 @@ struct AppConfig: Codable, Equatable {
         isPreferWebViewForIframe: Bool = true,
         isDirectParseBeforeWebViewEnabled: Bool = false,
         webPlayerUserAgentProfile: WebPlayerUserAgentProfile = .androidWebView,
+        isOfficialStreamingPlatformsEnabled: Bool = true,
         requestTimeout: TimeInterval = 25
     ) {
         self.environment = environment
@@ -58,6 +61,7 @@ struct AppConfig: Codable, Equatable {
         self.isPreferWebViewForIframe = isPreferWebViewForIframe
         self.isDirectParseBeforeWebViewEnabled = isDirectParseBeforeWebViewEnabled
         self.webPlayerUserAgentProfile = webPlayerUserAgentProfile
+        self.isOfficialStreamingPlatformsEnabled = isOfficialStreamingPlatformsEnabled
         self.requestTimeout = requestTimeout
     }
 
@@ -73,6 +77,7 @@ struct AppConfig: Codable, Equatable {
         isPreferWebViewForIframe = try container.decodeIfPresent(Bool.self, forKey: .isPreferWebViewForIframe) ?? true
         isDirectParseBeforeWebViewEnabled = try container.decodeIfPresent(Bool.self, forKey: .isDirectParseBeforeWebViewEnabled) ?? false
         webPlayerUserAgentProfile = try container.decodeIfPresent(WebPlayerUserAgentProfile.self, forKey: .webPlayerUserAgentProfile) ?? .androidWebView
+        isOfficialStreamingPlatformsEnabled = try container.decodeIfPresent(Bool.self, forKey: .isOfficialStreamingPlatformsEnabled) ?? true
         requestTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .requestTimeout) ?? 25
 
         switch environmentKind {
@@ -97,6 +102,7 @@ struct AppConfig: Codable, Equatable {
         try container.encode(isPreferWebViewForIframe, forKey: .isPreferWebViewForIframe)
         try container.encode(isDirectParseBeforeWebViewEnabled, forKey: .isDirectParseBeforeWebViewEnabled)
         try container.encode(webPlayerUserAgentProfile, forKey: .webPlayerUserAgentProfile)
+        try container.encode(isOfficialStreamingPlatformsEnabled, forKey: .isOfficialStreamingPlatformsEnabled)
         try container.encode(requestTimeout, forKey: .requestTimeout)
     }
 

@@ -2,6 +2,52 @@ import XCTest
 @testable import Anixart
 
 final class PlayerDecodingTests: XCTestCase {
+    func testEpisodeWithWatchedPreservesFields() {
+        let source = EpisodeSource(id: 20, name: "Kodik", episodesCount: 12, type: EpisodeType(id: 3, name: "TV", episodesCount: nil, viewCount: nil, workers: nil), typeId: 3)
+        let episode = Episode(
+            id: 10,
+            addedDate: 1_782_600_000,
+            iframe: true,
+            isFiller: false,
+            isWatched: false,
+            name: "3 серия",
+            playbackPosition: 120,
+            position: 3,
+            quality: 720,
+            releaseId: 100,
+            source: source,
+            sourceId: 20,
+            url: "https://example.test/player"
+        )
+
+        let watched = episode.withWatched(true)
+
+        XCTAssertEqual(watched.id, episode.id)
+        XCTAssertEqual(watched.addedDate, episode.addedDate)
+        XCTAssertEqual(watched.iframe, episode.iframe)
+        XCTAssertEqual(watched.isFiller, episode.isFiller)
+        XCTAssertEqual(watched.isWatched, true)
+        XCTAssertEqual(watched.name, episode.name)
+        XCTAssertEqual(watched.playbackPosition, episode.playbackPosition)
+        XCTAssertEqual(watched.position, episode.position)
+        XCTAssertEqual(watched.quality, episode.quality)
+        XCTAssertEqual(watched.releaseId, episode.releaseId)
+        XCTAssertEqual(watched.source, episode.source)
+        XCTAssertEqual(watched.sourceId, episode.sourceId)
+        XCTAssertEqual(watched.url, episode.url)
+    }
+
+    func testEpisodeWatchedStateMatchingFallsBackToPositionAndSource() {
+        let stored = Episode(id: nil, isWatched: false, position: 3, sourceId: 20)
+        let matching = Episode(id: nil, isWatched: true, position: 3, sourceId: 20)
+        let wrongSource = Episode(id: nil, isWatched: true, position: 3, sourceId: 21)
+        let fallbackTarget = Episode(id: nil, isWatched: true, position: 3)
+
+        XCTAssertTrue(stored.matchesWatchedStateTarget(matching))
+        XCTAssertFalse(stored.matchesWatchedStateTarget(wrongSource))
+        XCTAssertTrue(stored.matchesWatchedStateTarget(fallbackTarget, fallbackSourceId: 20))
+    }
+
     func testEpisodeResponseDecodesObjectAndNumericSources() throws {
         let data = Data("""
         {

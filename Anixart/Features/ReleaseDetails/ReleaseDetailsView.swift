@@ -1,4 +1,8 @@
 import SwiftUI
+import SafariServices
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ReleaseDetailsView: View {
     @EnvironmentObject private var appState: AppState
@@ -9,6 +13,9 @@ struct ReleaseDetailsView: View {
     @State private var release: Release?
     @State private var types: [EpisodeType] = []
     @State private var sources: [EpisodeSource] = []
+    @State private var streamingPlatforms: [ReleaseStreamingPlatform] = []
+    @State private var isLoadingStreamingPlatforms = false
+    @State private var streamingPlatformsError: String?
     @State private var episodes: [Episode] = []
     @State private var selectedTypeID: Int64?
     @State private var selectedSourceID: Int64?
@@ -31,7 +38,9 @@ struct ReleaseDetailsView: View {
     @State private var imageViewerRoute: ImageViewerRoute?
     @State private var playerRoute: PlayerRoute?
     @State private var allEpisodesRoute: AllEpisodesRoute?
+    @State private var officialPlatformRoute: OfficialStreamingPlatformRoute?
     @State private var revealedSpoilerCommentIDs: Set<String> = []
+    @State private var pendingWatchedEpisodeKeys: Set<String> = []
 
     init(releaseId: Int64, initialRelease: Release? = nil) {
         self.releaseId = releaseId
@@ -50,12 +59,14 @@ struct ReleaseDetailsView: View {
                 if let release {
                     heroCard(release)
                     watchCard
+                    releaseVideosCard(release)
                     ratingCard(release)
                     infoCard(release)
                     genresCard(release)
                     screenshotsCard(release)
                     descriptionCard(release)
-                    releaseCollectionCard("Связанные тайтлы", releases: release.relatedReleases, inlineLimit: 3, relatedCount: release.relatedCount, showsAllLink: true)
+                    relatedReleasesCard(release)
+                    collectionActionsCard(release)
                     releaseCollectionCard("Рекомендации", releases: release.recommendedReleases, inlineLimit: 5, relatedCount: nil, showsAllLink: false)
                     commentsCard(release)
                 } else if isLoadingRelease {
@@ -75,28 +86,41 @@ struct ReleaseDetailsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await loadReleaseAndTypes()
+            await updateStreamingPlatformsForCurrentSetting(force: true)
         }
         .navigationDestination(item: $playerRoute) { route in
             PlayerView(route: route)
         }
-        .navigationDestination(item: $allEpisodesRoute) { route in
+        .navigationDestination(item: $allEpisodesRoute) { _ in
             AllEpisodesView(
-                route: route,
+                episodes: sortedEpisodes,
+                continueEpisode: continueEpisode,
                 selectedEpisodeID: selectedEpisodeID,
                 selectedEpisodePosition: selectedEpisodePosition,
+                fallbackSourceId: selectedSourceID,
+                pendingWatchedEpisodeKeys: pendingWatchedEpisodeKeys,
                 onPlay: { episode in
                     selectEpisode(episode)
                     openPlayer(for: episode)
+                },
+                onToggleWatched: { episode in
+                    Task { await toggleEpisodeWatched(episode, trigger: .manual) }
                 }
             )
         }
         .fullScreenCover(item: $imageViewerRoute) { route in
             ImageGalleryViewer(route: route)
         }
+        .sheet(item: $officialPlatformRoute) { route in
+            SafariView(url: route.url)
+        }
         .task {
             guard !didLoad else { return }
             didLoad = true
             await loadReleaseAndTypes()
+        }
+        .task(id: streamingPlatformsTaskKey) {
+            await updateStreamingPlatformsForCurrentSetting()
         }
     }
 
@@ -229,23 +253,17 @@ struct ReleaseDetailsView: View {
                 }
 
                 HStack(spacing: 10) {
-                    selectorMenu(
-                        title: "Тип",
+                    voiceSelectorMenu(
+                        title: "Озвучка",
                         value: selectedType?.name ?? "Выбрать",
-                        isDisabled: types.isEmpty,
-                        items: types.map { PickerItem(id: $0.id, title: $0.name ?? "Тип \($0.id.map(String.init) ?? "")") }
-                    ) { id in
-                        Task { await selectType(id) }
-                    }
+                        isDisabled: types.isEmpty && !shouldShowGroupedVoiceSelector
+                    )
 
-                    selectorMenu(
+                    sourceSelectorMenu(
                         title: "Источник",
                         value: selectedSource?.name ?? "Выбрать",
-                        isDisabled: sources.isEmpty,
-                        items: sources.map { PickerItem(id: $0.id, title: $0.name ?? "Источник \($0.id.map(String.init) ?? "")") }
-                    ) { id in
-                        Task { await selectSource(id) }
-                    }
+                        isDisabled: sources.isEmpty
+                    )
                 }
 
                 if let continueEpisode {
@@ -269,17 +287,25 @@ struct ReleaseDetailsView: View {
                                 Button {
                                     selectEpisode(episode)
                                 } label: {
-                                    VStack(spacing: 2) {
-                                        Text(episode.position.map { "\($0)" } ?? "Эп.")
-                                            .font(.subheadline.weight(.semibold))
-                                        Text(episode.isWatched == true ? "смотрели" : "серия")
-                                            .font(.caption2)
-                                    }
-                                    .frame(width: 64, height: 48)
-                                    .foregroundStyle(isEpisodeSelected(episode) ? .white : .primary)
-                                    .background(isEpisodeSelected(episode) ? Color.accentColor : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                                    EpisodeChipView(
+                                        episode: episode,
+                                        isSelected: isEpisodeSelected(episode),
+                                        isPending: isEpisodeWatchPending(episode),
+                                        width: 64
+                                    )
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button {
+                                        Task { await toggleEpisodeWatched(episode, trigger: .manual) }
+                                    } label: {
+                                        Label(
+                                            episode.isWatched == true ? "Снять отметку просмотра" : "Отметить просмотренной",
+                                            systemImage: episode.isWatched == true ? "xmark.circle" : "checkmark.circle"
+                                        )
+                                    }
+                                    .disabled(isEpisodeWatchPending(episode))
+                                }
                             }
 
                             if episodes.count > 24 {
@@ -300,6 +326,9 @@ struct ReleaseDetailsView: View {
                             }
                         }
                     }
+                    Text("Удерживайте серию для меню отметки просмотра")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Button {
@@ -399,6 +428,7 @@ struct ReleaseDetailsView: View {
             .overlay {
                 Image(systemName: "photo")
                     .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
             }
     }
 
@@ -433,6 +463,159 @@ struct ReleaseDetailsView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func relatedReleasesCard(_ release: Release) -> some View {
+        let releases = release.relatedReleases ?? []
+        let expectedCount = release.relatedCount ?? release.related?.releaseCount
+        let relatedId = release.related?.id
+        let shouldShowAll = relatedId != nil || releases.count > 3 || (expectedCount ?? 0) > 3
+
+        if !releases.isEmpty || shouldShowAll {
+            detailsCard(title: "Связанные тайтлы") {
+                VStack(spacing: 0) {
+                    if releases.isEmpty {
+                        Text("Откройте полный список связанных тайтлов.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(releases.prefix(3), id: \.stableListID) { item in
+                            NavigationLink {
+                                ReleaseDetailsView(releaseId: item.id ?? 0, initialRelease: item)
+                            } label: {
+                                ReleaseCardView(release: item)
+                                    .foregroundStyle(.primary)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(item.id == nil)
+
+                            if item.stableListID != releases.prefix(3).last?.stableListID {
+                                Divider()
+                            }
+                        }
+                    }
+
+                    if shouldShowAll {
+                        if !releases.isEmpty {
+                            Divider()
+                        }
+                        NavigationLink {
+                            relatedReleasesDestination(
+                                release: release,
+                                relatedId: relatedId,
+                                initialReleases: releases,
+                                expectedCount: expectedCount
+                            )
+                        } label: {
+                            AppDisclosureRow(title: "Показать все")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func relatedReleasesDestination(release: Release, relatedId: Int64?, initialReleases: [Release], expectedCount: Int64?) -> some View {
+        if let relatedId {
+            RelatedReleasesView(
+                related: release.related,
+                relatedId: relatedId,
+                title: "Связанные тайтлы",
+                initialReleases: initialReleases,
+                expectedCount: expectedCount,
+                sourceReleaseId: release.id ?? releaseId
+            )
+        } else {
+            ReleaseCollectionListView(title: "Связанные тайтлы", releases: initialReleases)
+        }
+    }
+
+    private func collectionActionsCard(_ release: Release) -> some View {
+        detailsCard(title: "Коллекции") {
+            VStack(spacing: 0) {
+                NavigationLink {
+                    ReleaseCollectionsView(releaseId: release.id ?? releaseId)
+                } label: {
+                    AppDisclosureRow(title: "Коллекции с этим тайтлом")
+                }
+                .buttonStyle(.plain)
+                .disabled((release.id ?? releaseId) <= 0)
+
+                Divider()
+
+                NavigationLink {
+                    AddReleaseToCollectionView(releaseId: release.id ?? releaseId)
+                } label: {
+                    AppDisclosureRow(title: "Добавить в мою коллекцию")
+                }
+                .buttonStyle(.plain)
+                .disabled((release.id ?? releaseId) <= 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func releaseVideosCard(_ release: Release) -> some View {
+        let targetReleaseId = release.id ?? releaseId
+        let banners = release.videoBanners ?? []
+        let shouldShow = targetReleaseId > 0 || !banners.isEmpty || release.canVideoAppeal == true
+
+        if shouldShow {
+            detailsCard(title: "Видео") {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !banners.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(banners.prefix(3), id: \.stableVideoBannerID) { banner in
+                                    CachedRemoteImageView(urlString: banner.image, contentMode: .fill) {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(Color.secondary.opacity(0.16))
+                                            .overlay {
+                                                Image(systemName: "play.rectangle.fill")
+                                                    .foregroundStyle(.secondary)
+                                                    .allowsHitTesting(false)
+                                            }
+                                    }
+                                    .frame(width: 154, height: 87)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+
+                    NavigationLink {
+                        ReleaseVideosView(releaseId: targetReleaseId, initialRelease: release)
+                    } label: {
+                        AppDisclosureRow(title: banners.isEmpty ? "Все видео" : "Открыть видео", systemImage: "play.rectangle")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(targetReleaseId <= 0)
+                }
+            }
+        }
+    }
+
+    private func logRelatedOpen(release: Release, relatedId: Int64?, initialCount: Int, expectedCount: Int64?) {
+        if let relatedId {
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Related releases opened from release details", metadata: [
+                "releaseId": "\(release.id ?? releaseId)",
+                "relatedId": "\(relatedId)",
+                "initialCount": "\(initialCount)",
+                "totalCount": expectedCount.map(String.init) ?? "-"
+            ])
+        } else {
+            appState.diagnosticsLogger.log(level: .warning, category: .release, message: "Related local fallback used", metadata: [
+                "releaseId": "\(release.id ?? releaseId)",
+                "initialCount": "\(initialCount)",
+                "totalCount": expectedCount.map(String.init) ?? "-"
+            ])
         }
     }
 
@@ -478,34 +661,77 @@ struct ReleaseDetailsView: View {
         }
     }
 
-    private func selectorMenu(title: String, value: String, isDisabled: Bool, items: [PickerItem], onSelect: @escaping (Int64?) -> Void) -> some View {
+    private func voiceSelectorMenu(title: String, value: String, isDisabled: Bool) -> some View {
         Menu {
-            ForEach(items) { item in
-                Button(item.title) {
-                    onSelect(item.rawID)
+            if shouldShowGroupedVoiceSelector {
+                Section("Официальные") {
+                    ForEach(validStreamingPlatforms, id: \.stableID) { platform in
+                        Button(platform.displayName) {
+                            openOfficialStreamingPlatform(platform)
+                        }
+                    }
                 }
+
+                if !types.isEmpty {
+                    Divider()
+                    Section("Сторонние") {
+                        typeButtons
+                    }
+                }
+            } else {
+                typeButtons
             }
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Text(value)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity)
-            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            selectorMenuLabel(title: title, value: value)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
+    }
+
+    private func sourceSelectorMenu(title: String, value: String, isDisabled: Bool) -> some View {
+        Menu {
+            sourceButtons
+        } label: {
+            selectorMenuLabel(title: title, value: value)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+    }
+
+    private var typeButtons: some View {
+        ForEach(types.map { PickerItem(id: $0.id, title: $0.name ?? "Озвучка \($0.id.map(String.init) ?? "")") }) { item in
+            Button(item.title) {
+                Task { await selectType(item.rawID) }
+            }
+        }
+    }
+
+    private var sourceButtons: some View {
+        ForEach(sources.map { PickerItem(id: $0.id, title: $0.name ?? "Источник \($0.id.map(String.init) ?? "")") }) { item in
+            Button(item.title) {
+                Task { await selectSource(item.rawID) }
+            }
+        }
+    }
+
+    private func selectorMenuLabel(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var selectedType: EpisodeType? {
@@ -514,6 +740,18 @@ struct ReleaseDetailsView: View {
 
     private var selectedSource: EpisodeSource? {
         sources.first { $0.id == selectedSourceID }
+    }
+
+    private var validStreamingPlatforms: [ReleaseStreamingPlatform] {
+        streamingPlatforms.filter { $0.validURL != nil }
+    }
+
+    private var shouldShowGroupedVoiceSelector: Bool {
+        appState.config.isOfficialStreamingPlatformsEnabled && !validStreamingPlatforms.isEmpty
+    }
+
+    private var streamingPlatformsTaskKey: String {
+        "\(releaseId)-\(appState.config.isOfficialStreamingPlatformsEnabled)"
     }
 
     private var releaseIDForInteraction: Int64? {
@@ -534,10 +772,10 @@ struct ReleaseDetailsView: View {
 
     private var sourceSummary: String {
         if types.isEmpty {
-            return "Типы озвучки пока не загружены."
+            return "Озвучки пока не загружены."
         }
         if sources.isEmpty {
-            return "Выберите тип, затем источник."
+            return "Выберите озвучку, затем источник."
         }
         return "Выберите серию для просмотра."
     }
@@ -608,14 +846,138 @@ struct ReleaseDetailsView: View {
             "position": "\(route.episodePosition)"
         ])
         playerRoute = route
+        markEpisodeWatchedOnPlayback(route, episode: episode)
         recordHistoryOpen(route)
     }
 
     private func openAllEpisodes() {
-        allEpisodesRoute = AllEpisodesRoute(
-            episodes: sortedEpisodes,
-            continueEpisode: continueEpisode
+        allEpisodesRoute = AllEpisodesRoute()
+    }
+
+    @MainActor
+    private func toggleEpisodeWatched(_ episode: Episode, trigger: EpisodeWatchTrigger) async {
+        guard let sourceId = episode.resolvedWatchSourceID ?? selectedSourceID,
+              let position = episode.position
+        else {
+            output = "Не удалось изменить отметку просмотра: нет источника или номера серии."
+            return
+        }
+
+        let pendingKey = episode.watchedStateKey(fallbackSourceId: sourceId)
+        guard !pendingWatchedEpisodeKeys.contains(pendingKey) else { return }
+
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+
+        let oldWatched = currentEpisode(matching: episode, fallbackSourceId: sourceId)?.isWatched == true
+        let newWatched = !oldWatched
+        pendingWatchedEpisodeKeys.insert(pendingKey)
+        logEpisodeWatchEvent(newWatched ? "Episode watch started" : "Episode unwatch started", level: .info, releaseId: releaseId, sourceId: sourceId, position: position, episodeId: episode.id, trigger: trigger, oldWatched: oldWatched, newWatched: newWatched)
+        updateEpisodeWatchedState(matching: episode, watched: newWatched, fallbackSourceId: sourceId, trigger: trigger)
+
+        do {
+            let service = EpisodeService(apiClient: appState.makeAPIClient())
+            let response: Response
+            if newWatched {
+                response = try await service.watch(releaseId: releaseId, sourceId: sourceId, position: position)
+            } else {
+                response = try await service.unwatch(releaseId: releaseId, sourceId: sourceId, position: position)
+            }
+
+            if let code = response.code, code != Response.successful {
+                updateEpisodeWatchedState(matching: episode, watched: oldWatched, fallbackSourceId: sourceId, trigger: trigger)
+                logEpisodeWatchEvent(newWatched ? "Episode watch failed" : "Episode unwatch failed", level: .warning, releaseId: releaseId, sourceId: sourceId, position: position, episodeId: episode.id, trigger: trigger, oldWatched: newWatched, newWatched: oldWatched, code: code)
+                output = "Сервер не принял отметку серии. Код: \(code)"
+            } else {
+                logEpisodeWatchEvent(newWatched ? "Episode watch succeeded" : "Episode unwatch succeeded", level: .info, releaseId: releaseId, sourceId: sourceId, position: position, episodeId: episode.id, trigger: trigger, oldWatched: oldWatched, newWatched: newWatched, code: response.code)
+            }
+        } catch {
+            updateEpisodeWatchedState(matching: episode, watched: oldWatched, fallbackSourceId: sourceId, trigger: trigger)
+            logEpisodeWatchEvent(newWatched ? "Episode watch failed" : "Episode unwatch failed", level: .warning, releaseId: releaseId, sourceId: sourceId, position: position, episodeId: episode.id, trigger: trigger, oldWatched: newWatched, newWatched: oldWatched, error: error)
+            output = "Не удалось изменить отметку просмотра: \(Redactor.redact(error.localizedDescription))"
+        }
+
+        pendingWatchedEpisodeKeys.remove(pendingKey)
+    }
+
+    private func markEpisodeWatchedOnPlayback(_ route: PlayerRoute, episode: Episode) {
+        updateEpisodeWatchedState(matching: episode, watched: true, fallbackSourceId: route.sourceId, trigger: .playback)
+        Task {
+            logEpisodeWatchEvent("Episode watch started", level: .info, releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition, episodeId: episode.id, trigger: .playback, oldWatched: episode.isWatched == true, newWatched: true)
+            do {
+                let service = EpisodeService(apiClient: appState.makeAPIClient())
+                let response = try await service.watch(releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition)
+                logEpisodeWatchEvent("Episode watch succeeded", level: .info, releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition, episodeId: episode.id, trigger: .playback, oldWatched: episode.isWatched == true, newWatched: true, code: response.code)
+            } catch {
+                if error.isUserInvisibleCancellation { return }
+                logEpisodeWatchEvent("Episode watch failed", level: .warning, releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition, episodeId: episode.id, trigger: .playback, oldWatched: episode.isWatched == true, newWatched: true, error: error)
+            }
+        }
+    }
+
+    private func updateEpisodeWatchedState(matching episode: Episode, watched: Bool, fallbackSourceId: Int64?, trigger: EpisodeWatchTrigger) {
+        let oldWatched = currentEpisode(matching: episode, fallbackSourceId: fallbackSourceId)?.isWatched == true
+        var didUpdate = false
+        episodes = episodes.map { candidate in
+            guard candidate.matchesWatchedStateTarget(episode, fallbackSourceId: fallbackSourceId) else {
+                return candidate
+            }
+            didUpdate = true
+            return candidate.withWatched(watched)
+        }
+
+        guard didUpdate else { return }
+        logEpisodeWatchEvent(
+            "Episode watched local state updated",
+            level: .debug,
+            releaseId: releaseId,
+            sourceId: fallbackSourceId ?? episode.resolvedWatchSourceID,
+            position: episode.position,
+            episodeId: episode.id,
+            trigger: trigger,
+            oldWatched: oldWatched,
+            newWatched: watched
         )
+    }
+
+    private func currentEpisode(matching episode: Episode, fallbackSourceId: Int64?) -> Episode? {
+        episodes.first { $0.matchesWatchedStateTarget(episode, fallbackSourceId: fallbackSourceId) }
+    }
+
+    private func isEpisodeWatchPending(_ episode: Episode) -> Bool {
+        pendingWatchedEpisodeKeys.contains(episode.watchedStateKey(fallbackSourceId: selectedSourceID))
+    }
+
+    private func logEpisodeWatchEvent(
+        _ message: String,
+        level: DiagnosticLevel,
+        releaseId: Int64,
+        sourceId: Int64?,
+        position: Int?,
+        episodeId: Int64?,
+        trigger: EpisodeWatchTrigger,
+        oldWatched: Bool?,
+        newWatched: Bool?,
+        code: Int? = nil,
+        error: Error? = nil
+    ) {
+        var metadata: [String: String] = [
+            "releaseId": "\(releaseId)",
+            "sourceId": sourceId.map(String.init) ?? "-",
+            "position": position.map(String.init) ?? "-",
+            "episodeId": episodeId.map(String.init) ?? "-",
+            "trigger": trigger.rawValue,
+            "oldWatched": oldWatched.map(String.init) ?? "-",
+            "newWatched": newWatched.map(String.init) ?? "-"
+        ]
+        if let code {
+            metadata["code"] = "\(code)"
+        }
+        if let error {
+            metadata["error"] = Redactor.redact(error.localizedDescription)
+        }
+        appState.diagnosticsLogger.log(level: level, category: .player, message: message, metadata: metadata)
     }
 
     private func recordHistoryOpen(_ route: PlayerRoute) {
@@ -686,6 +1048,17 @@ struct ReleaseDetailsView: View {
             urls: validImages,
             initialIndex: min(max(initialIndex, 0), validImages.count - 1)
         )
+    }
+
+    private func openOfficialStreamingPlatform(_ platform: ReleaseStreamingPlatform) {
+        guard let url = platform.validURL else { return }
+        appState.diagnosticsLogger.log(level: .info, category: .release, message: "Official streaming platform opened", metadata: [
+            "releaseId": "\(releaseId)",
+            "platformId": platform.id.map(String.init) ?? "-",
+            "platformName": platform.name ?? "-",
+            "host": url.host ?? "-"
+        ])
+        officialPlatformRoute = OfficialStreamingPlatformRoute(platform: platform, url: url)
     }
 
     private func genreItems(_ release: Release) -> [String] {
@@ -782,6 +1155,54 @@ struct ReleaseDetailsView: View {
             appState.diagnosticsLogger.log(level: .error, category: .release, message: "Release details load failed", metadata: [
                 "releaseId": "\(releaseId)",
                 "error": output
+            ])
+        }
+    }
+
+    private func updateStreamingPlatformsForCurrentSetting(force: Bool = false) async {
+        guard appState.config.isOfficialStreamingPlatformsEnabled else {
+            streamingPlatforms = []
+            streamingPlatformsError = nil
+            isLoadingStreamingPlatforms = false
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Official streaming platforms hidden by setting", metadata: [
+                "releaseId": "\(releaseId)"
+            ])
+            return
+        }
+
+        guard releaseId > 0 else { return }
+        if !force, !streamingPlatforms.isEmpty {
+            return
+        }
+
+        isLoadingStreamingPlatforms = true
+        streamingPlatformsError = nil
+        defer { isLoadingStreamingPlatforms = false }
+
+        do {
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Streaming platforms load started", metadata: [
+                "releaseId": "\(releaseId)"
+            ])
+            let service = ReleaseStreamingPlatformService(apiClient: appState.makeAPIClient())
+            let platforms = try await service.platforms(releaseId: releaseId)
+            guard appState.config.isOfficialStreamingPlatformsEnabled else { return }
+            streamingPlatforms = platforms
+            appState.diagnosticsLogger.log(level: .info, category: .release, message: "Streaming platforms load succeeded", metadata: [
+                "releaseId": "\(releaseId)",
+                "platformCount": "\(platforms.count)"
+            ])
+        } catch {
+            if error.isUserInvisibleCancellation {
+                appState.diagnosticsLogger.log(level: .debug, category: .release, message: "Streaming platforms load cancelled", metadata: [
+                    "releaseId": "\(releaseId)"
+                ])
+                return
+            }
+            streamingPlatforms = []
+            streamingPlatformsError = DebugResultFormatter.error(error)
+            appState.diagnosticsLogger.log(level: .warning, category: .release, message: "Streaming platforms load failed", metadata: [
+                "releaseId": "\(releaseId)",
+                "error": streamingPlatformsError ?? "-"
             ])
         }
     }
@@ -1322,6 +1743,7 @@ private extension View {
             GeometryReader { proxy in
                 Color.clear
                     .preference(key: HeightPreferenceKey.self, value: proxy.size.height)
+                    .allowsHitTesting(false)
             }
         }
         .onPreferenceChange(HeightPreferenceKey.self, perform: onChange)
@@ -1365,6 +1787,31 @@ private struct PickerItem: Identifiable {
     var id: String {
         rawID.map(String.init) ?? title
     }
+}
+
+private struct OfficialStreamingPlatformRoute: Identifiable {
+    let platform: ReleaseStreamingPlatform
+    let url: URL
+
+    var id: String {
+        "\(platform.stableID)|\(url.absoluteString)"
+    }
+}
+
+private extension ReleaseVideoBanner {
+    var stableVideoBannerID: String {
+        id.map { "banner-\($0)" } ?? [title, url, image].compactMap { $0 }.joined(separator: "|")
+    }
+}
+
+private struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 private enum RatingAction {
@@ -1527,10 +1974,14 @@ private struct ReleaseCollectionListView: View {
     }
 }
 
+private enum EpisodeWatchTrigger: String {
+    case playback
+    case manual
+    case playerSwitch
+}
+
 private struct AllEpisodesRoute: Identifiable, Equatable, Hashable {
     let id = UUID()
-    let episodes: [Episode]
-    let continueEpisode: Episode?
 
     static func == (lhs: AllEpisodesRoute, rhs: AllEpisodesRoute) -> Bool {
         lhs.id == rhs.id
@@ -1542,17 +1993,21 @@ private struct AllEpisodesRoute: Identifiable, Equatable, Hashable {
 }
 
 private struct AllEpisodesView: View {
-    let route: AllEpisodesRoute
+    let episodes: [Episode]
+    let continueEpisode: Episode?
     let selectedEpisodeID: Int64?
     let selectedEpisodePosition: Int?
+    let fallbackSourceId: Int64?
+    let pendingWatchedEpisodeKeys: Set<String>
     let onPlay: (Episode) -> Void
+    let onToggleWatched: (Episode) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 8), count: 5)
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                if let continueEpisode = route.continueEpisode {
+                if let continueEpisode {
                     Button {
                         onPlay(continueEpisode)
                     } label: {
@@ -1562,24 +2017,35 @@ private struct AllEpisodesView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
+                Text("Удерживайте серию для меню отметки просмотра")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(route.episodes, id: \.stableEpisodeID) { episode in
+                    ForEach(episodes, id: \.stableEpisodeID) { episode in
                         Button {
                             onPlay(episode)
                         } label: {
-                            VStack(spacing: 2) {
-                                Text(episode.position.map(String.init) ?? "Эп.")
-                                    .font(.subheadline.weight(.bold))
-                                if episode.isWatched == true {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.caption2)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .foregroundStyle(isSelected(episode) ? .white : .primary)
-                            .background(isSelected(episode) ? Color.accentColor : Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                            EpisodeChipView(
+                                episode: episode,
+                                isSelected: isSelected(episode),
+                                isPending: isPending(episode),
+                                width: nil
+                            )
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                guard !isPending(episode) else { return }
+                                onToggleWatched(episode)
+                            } label: {
+                                Label(
+                                    episode.isWatched == true ? "Снять отметку просмотра" : "Отметить просмотренной",
+                                    systemImage: episode.isWatched == true ? "xmark.circle" : "checkmark.circle"
+                                )
+                            }
+                            .disabled(isPending(episode))
+                        }
                         .accessibilityLabel("Серия \(episode.position ?? 0)")
                     }
                 }
@@ -1596,6 +2062,63 @@ private struct AllEpisodesView: View {
             return id == selectedEpisodeID
         }
         return episode.position == selectedEpisodePosition
+    }
+
+    private func isPending(_ episode: Episode) -> Bool {
+        pendingWatchedEpisodeKeys.contains(episode.watchedStateKey(fallbackSourceId: fallbackSourceId))
+    }
+}
+
+private struct EpisodeChipView: View {
+    let episode: Episode
+    let isSelected: Bool
+    let isPending: Bool
+    let width: CGFloat?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Text(episode.position.map(String.init) ?? "Эп.")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            if episode.isWatched == true && !isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(5)
+            }
+
+            if isPending {
+                ProgressView()
+                    .scaleEffect(0.55)
+                    .padding(4)
+            }
+        }
+        .frame(width: width, height: 48)
+        .frame(maxWidth: width == nil ? .infinity : nil)
+        .foregroundStyle(isSelected ? .white : .primary)
+        .background(backgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(borderColor, lineWidth: episode.isWatched == true && !isSelected ? 1 : 0)
+                .allowsHitTesting(false)
+        )
+        .opacity(isPending ? 0.65 : 1)
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return .accentColor
+        }
+        if episode.isWatched == true {
+            return Color(.systemBackground)
+        }
+        return Color.secondary.opacity(0.12)
+    }
+
+    private var borderColor: Color {
+        Color.secondary.opacity(0.18)
     }
 }
 

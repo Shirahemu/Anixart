@@ -241,6 +241,7 @@ struct PlayerView: View {
         webReloadID = UUID()
         let nextRoute = viewModel.route.replacingEpisode(with: episode)
         recordHistoryOpen(nextRoute)
+        recordEpisodeWatched(nextRoute)
         await viewModel.switchToEpisode(
             episode,
             apiClient: appState.makeAPIClient(),
@@ -282,6 +283,41 @@ struct PlayerView: View {
                 ])
             }
         }
+    }
+
+    private func recordEpisodeWatched(_ route: PlayerRoute) {
+        Task {
+            appState.diagnosticsLogger.log(level: .info, category: .player, message: "Episode watch started", metadata: episodeWatchMetadata(route: route, code: nil, error: nil))
+            do {
+                let service = EpisodeService(apiClient: appState.makeAPIClient())
+                let response = try await service.watch(releaseId: route.releaseId, sourceId: route.sourceId, position: route.episodePosition)
+                appState.diagnosticsLogger.log(level: .info, category: .player, message: "Episode watch succeeded", metadata: episodeWatchMetadata(route: route, code: response.code, error: nil))
+            } catch {
+                if error.isUserInvisibleCancellation {
+                    return
+                }
+                appState.diagnosticsLogger.log(level: .warning, category: .player, message: "Episode watch failed", metadata: episodeWatchMetadata(route: route, code: nil, error: error))
+            }
+        }
+    }
+
+    private func episodeWatchMetadata(route: PlayerRoute, code: Int?, error: Error?) -> [String: String] {
+        var metadata: [String: String] = [
+            "releaseId": "\(route.releaseId)",
+            "sourceId": "\(route.sourceId)",
+            "position": "\(route.episodePosition)",
+            "episodeId": "-",
+            "trigger": "playerSwitch",
+            "oldWatched": "-",
+            "newWatched": "true"
+        ]
+        if let code {
+            metadata["code"] = "\(code)"
+        }
+        if let error {
+            metadata["error"] = Redactor.redact(error.localizedDescription)
+        }
+        return metadata
     }
 
     private func copyPlayerSummary(url: URL) {
